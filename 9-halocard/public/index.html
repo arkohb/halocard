@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HaloCard — sign in</title>
+<link rel="stylesheet" href="app.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#171410">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HaloCard">
+</head>
+<body>
+<header class="bar"><div class="brand">Halo<span>Card</span> 🪪</div></header>
+<div class="wrap" style="max-width:440px">
+  <div class="card center" style="background:var(--dark);color:#fdf6e6;border:none">
+    <h1 style="color:var(--k-gold)">Your contact, one scan away</h1>
+    <p class="small" style="color:#e9ddc4">Make smart QR contact cards for your Halo brands. Edit the details anytime — the printed QR never changes.</p>
+  </div>
+  <div class="card" style="margin-top:1rem">
+    <h3>Sign in</h3>
+    <label>Email</label><input id="email" type="email" placeholder="you@halo.app">
+    <label>Password</label><input id="pw" type="password" placeholder="••••••••">
+    <div style="margin-top:.9rem"><button class="btn" onclick="login()">Sign in</button></div>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script>
+const api=(p,o={})=>fetch(p,o).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'error');return d;});
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.add('hidden'),3500);}
+if(localStorage.getItem('hc_token')) location.href='/app';
+async function login(){
+  try{const r=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:pw.value})});
+    localStorage.setItem('hc_token',r.token);location.href='/app';}catch(e){toast(e.message);}
+}
+document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+</script>
+<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}</script>
+</body>
+</html>

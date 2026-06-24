@@ -1,0 +1,9 @@
+{
+  "name": "halocard-app",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "HaloCard — Smart Contact QR Card Generator (dynamic QR, vCard, print-ready export).",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=22.5.0" }
+}

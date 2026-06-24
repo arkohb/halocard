@@ -1,0 +1,96 @@
+================================================================
+HaloCard — Smart Contact QR Card Generator · SETUP & DEPLOY
+================================================================
+Folder: 9-halocard/
+Same stack and one-click Railway deploy as susu and the school:
+one self-contained Node service (built-in node:sqlite, no runtime
+dependencies). The QR + PDF libraries are vendored locally in
+public/vendor, so there are no CDNs and the security policy stays tight.
+
+----------------------------------------------------------------
+WHAT IT DOES
+----------------------------------------------------------------
+A personal generator for your Halo brands. You make contact cards
+that show only Name + Logo + QR on the printed card. The QR is
+DYNAMIC: it points to /c/<slug>, a live profile page with a
+"Save to contacts" button (a vCard). Because it's dynamic, you can
+edit a card's phone, email, address, etc. anytime and the SAME printed
+QR keeps working — no reprinting. It also counts scans and saves.
+
+Features:
+  • Full contact form (name, title, company, phones, email, website,
+    address, socials, profile photo, company logo)
+  • 5 templates: Corporate, Executive, Minimalist, Premium (black/gold),
+    Modern — all in the Halo kente palette, with an accent-colour picker
+  • Live front/back preview with the QR rendered in-browser
+  • Export PNG, SVG, and print-ready PDF (300 DPI, bleed, crop marks;
+    85×55 mm, 90×50 mm, or custom)
+  • Dynamic profile page + live vCard ("Save to contacts")
+  • Scan + contact-saved tracking, per card and in the dashboard
+  • Bulk create from a CSV (columns: name, company, position, phone, email)
+  • Enable/disable a card (a disabled QR shows "no longer active")
+
+----------------------------------------------------------------
+ENVIRONMENT VARIABLES
+----------------------------------------------------------------
+Required:
+  AUTH_SECRET       long random string (signs your login token)
+  NODE_ENV          production   (refuses to boot on a weak secret)
+  ADMIN_EMAIL       your login email
+  ADMIN_PASSWORD    your login password
+  APP_URL           https://YOUR-APP.up.railway.app   (goes into the QR links)
+Do NOT set PORT — Railway sets it.
+If ADMIN_* are unset on first boot, a login is created and printed once
+to the deploy logs.
+
+----------------------------------------------------------------
+DEPLOY ON RAILWAY (same as your other apps)
+----------------------------------------------------------------
+1. Push the 9-halocard folder to GitHub (its own repo, or as a
+   subfolder — then set Root Directory to 9-halocard in Railway).
+2. Railway -> add service -> Deploy from the repo. It auto-detects the
+   Dockerfile (Node 22). No build command needed.
+3. Attach a Volume (Settings -> Volumes), mount path /data. Railway sets
+   RAILWAY_VOLUME_MOUNT_PATH automatically and the app stores
+   halocard.db there. Skip this and your cards reset on every redeploy.
+4. Add the environment variables above.
+5. Open https://YOUR-APP.up.railway.app/health -> expect {"ok":true}.
+6. Set APP_URL to the real URL (it's used inside every QR), redeploy.
+
+----------------------------------------------------------------
+FIRST RUN
+----------------------------------------------------------------
+1. Open "/" and sign in with ADMIN_EMAIL / ADMIN_PASSWORD.
+2. "+ New card" -> fill in details, pick a template + accent, upload a
+   logo/photo -> Save. Saving generates the live QR link.
+3. The card preview shows the QR. Export PNG/SVG/PDF to print.
+4. Scan the QR with a phone -> it opens the profile page -> tap
+   "Save to contacts" to import the vCard.
+5. Later, edit the card (new number, new company) -> the same QR still
+   works and now serves the updated details.
+
+----------------------------------------------------------------
+NOTES & LIMITS (honest)
+----------------------------------------------------------------
+• Dynamic vs static QR: dynamic QR (used here) means scanning opens the
+  profile page, then one tap saves the contact — this is what makes
+  "edit later" and scan-tracking possible. A pure static vCard QR would
+  import in one step but could never be edited or tracked. You chose
+  dynamic.
+• Scan/contact-saved counts work because every scan loads /c/<slug> on
+  the server. They require the app to be online (it is).
+• Images are stored inside the card record (kept small automatically on
+  upload). There's no separate file store / S3 — by design, to match the
+  rest of your stack and keep deployment identical.
+• PNG/SVG/PDF export happens in your browser (the vendored QR + PDF libs).
+  Fonts in exports use a standard sans-serif for consistent rendering.
+
+----------------------------------------------------------------
+SECURITY (same hardening as your other apps)
+----------------------------------------------------------------
+JWT login (scrypt-hashed password, 30-day token), constant-time token
+checks, per-IP login rate limiting, request body cap, security headers
+(CSP, HSTS, nosniff, frame-deny), CORS locked (no wildcard), and a
+production guard that refuses a weak AUTH_SECRET. Set a strong
+AUTH_SECRET and a real ADMIN_PASSWORD before going live.
+================================================================
