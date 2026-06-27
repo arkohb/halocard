@@ -227,10 +227,10 @@ function cardSVG(side){
   const name=[c.first_name,c.middle_name,c.last_name].filter(Boolean).join(' ')||'Your Name';
   const ctx={name,company:c.company,job:c.job_title,logo:CARD.logo,photo:CARD.photo,accent:CARD.accent,slogan:c.slogan,url:EDIT_ID?url:(APP_URL||location.origin)+'/c/preview'};
   const inner=(side==='back'?BACK:FRONT)[CARD.template]?.(ctx)||FRONT.corporate(ctx);
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">${inner}</svg>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" font-family="Arial, Helvetica, sans-serif">${inner}</svg>`;
 }
 const tx=s=>esc(s||'');
-function logoTag(logo,x,y,w,h){return logo?`<image href="${logo}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`:'';}
+function logoTag(logo,x,y,w,h){return logo?`<image xlink:href="${logo}" href="${logo}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`:'';}
 /* ---- FRONT templates: name + logo + QR only ---- */
 const FRONT={
   corporate:c=>`<rect width="${W}" height="${H}" fill="#f7f2e7"/><rect width="20" height="${H}" fill="${c.accent}"/>
@@ -291,14 +291,30 @@ async function saveCard(){
 
 /* ============ exports ============ */
 function currentSVGString(){return cardSVG(SIDE);}
-function svgToImage(svgStr){return new Promise((res,rej)=>{const img=new Image();const blob=new Blob([svgStr],{type:'image/svg+xml;charset=utf-8'});const u=URL.createObjectURL(blob);img.onload=()=>{URL.revokeObjectURL(u);res(img);};img.onerror=rej;img.src=u;});}
-function dl(href,name){const a=document.createElement('a');a.href=href;a.download=name;document.body.appendChild(a);a.click();a.remove();}
+function svgToImage(svgStr){return new Promise((res,rej)=>{const img=new Image();
+  img.onload=()=>res(img);
+  img.onerror=()=>rej(new Error('could not render the card image'));
+  // data-URL (not blob:) loads reliably on mobile WebKit and keeps the canvas un-tainted
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr);});}
+function saveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  if('download' in a){a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);}
+  else{ // iOS Safari ignores download attr — open so the user can long-press → Save
+    window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),10000); toast('Tap and hold the image to save it');
+  }
+}
 const fileBase=()=>([document.getElementById('f_first').value,document.getElementById('f_last').value].filter(Boolean).join('-')||'halocard')+'-'+SIDE;
-function exportSVG(){const b=new Blob([currentSVGString()],{type:'image/svg+xml'});dl(URL.createObjectURL(b),fileBase()+'.svg');}
-async function renderCanvas(scale){const img=await svgToImage(currentSVGString());const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
-async function exportPNG(){try{const cv=await renderCanvas(2);dl(cv.toDataURL('image/png'),fileBase()+'.png');}catch(e){toast('Export failed');}}
+function exportSVG(){try{const b=new Blob([currentSVGString()],{type:'image/svg+xml'});saveBlob(b,fileBase()+'.svg');}catch(e){toast('SVG export failed: '+e.message);}}
+async function renderCanvas(scale){const img=await svgToImage(currentSVGString());
+  if(img.decode){try{await img.decode();}catch{}}
+  const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;
+  const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
+function canvasToBlob(cv,type,q){return new Promise((res,rej)=>{if(cv.toBlob){cv.toBlob(b=>b?res(b):rej(new Error('blob failed')),type,q);}else{try{const d=cv.toDataURL(type,q),bin=atob(d.split(',')[1]),arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);res(new Blob([arr],{type}));}catch(e){rej(e);}}});}
+async function exportPNG(){try{const cv=await renderCanvas(3);const b=await canvasToBlob(cv,'image/png');saveBlob(b,fileBase()+'.png');}catch(e){toast('PNG export failed: '+e.message);}}
 async function exportPDF(){
   try{
+    if(!window.jspdf||!window.jspdf.jsPDF){toast('PDF engine not loaded — refresh and retry');return;}
     let sel=document.getElementById('exSize').value, mmW,mmH;
     if(sel==='custom'){mmW=+document.getElementById('exW').value||85;mmH=+document.getElementById('exH').value||55;}
     else{[mmW,mmH]=sel.split(',').map(Number);}
@@ -307,12 +323,13 @@ async function exportPDF(){
     const {jsPDF}=window.jspdf;
     const doc=new jsPDF({unit:'mm',format:[pageW,pageH],orientation:pageW>=pageH?'landscape':'portrait'});
     doc.addImage(png,'PNG',bleed,bleed,mmW,mmH);
-    // crop marks
     doc.setDrawColor(0);doc.setLineWidth(0.2);const L=3;
     const marks=[[bleed,bleed,-1,-1],[pageW-bleed,bleed,1,-1],[bleed,pageH-bleed,-1,1],[pageW-bleed,pageH-bleed,1,1]];
     marks.forEach(([x,y,sx,sy])=>{doc.line(x,y,x+sx*L,y);doc.line(x,y,x,y+sy*L);});
-    doc.save(fileBase()+'.pdf');
-  }catch(e){toast('PDF export failed');}
+    try{doc.save(fileBase()+'.pdf');}catch{ // mobile fallback
+      const blob=doc.output('blob');saveBlob(blob,fileBase()+'.pdf');
+    }
+  }catch(e){toast('PDF export failed: '+e.message);}
 }
 
 /* ============ bulk CSV ============ */

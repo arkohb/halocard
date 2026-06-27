@@ -1,4 +1,4 @@
-const CACHE = "halocard-v1";
+const CACHE = "halocard-v2";
 const CORE = ["/", "/index.html", "/app", "/app.html", "/app.css", "/manifest.webmanifest",
   "/vendor/qrcode.js", "/vendor/jspdf.umd.min.js",
   "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/apple-touch-icon.png"];
