@@ -11,6 +11,17 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="HaloCard">
+<style>
+.modalwrap{position:fixed;inset:0;background:rgba(23,20,16,.62);display:flex;align-items:center;justify-content:center;z-index:60;padding:1rem}
+.modalcard{background:#fff;border-radius:16px;max-width:600px;width:100%;max-height:86vh;overflow:auto;padding:1.1rem}
+.mhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem}
+.mhead h3{margin:0}
+.leadrow{display:flex;justify-content:space-between;gap:.6rem;padding:.65rem 0;border-bottom:1px solid #eee7d4;align-items:flex-start}
+.leadrow:last-child{border-bottom:none}
+.sigbox{width:100%;min-height:130px;font-family:monospace;font-size:.78rem;border:1.5px solid #e6dcc6;border-radius:10px;padding:.6rem}
+.clickgrid{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0}
+.clickpill{background:#f3ecd9;border-radius:999px;padding:.25rem .7rem;font-size:.82rem;font-weight:700}
+</style>
 <script src="/vendor/qrcode.js"></script>
 <script src="/vendor/jspdf.umd.min.js"></script>
 </head>
@@ -19,10 +30,11 @@
   <div class="brand">Halo<span>Card</span> 🪪</div>
   <div class="spacer"></div>
   <button class="btn ghost sm" id="navCards" style="color:#fdf6e6;border-color:#4a443a" onclick="showDash()">My cards</button>
+  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="showLeads()">Leads</button>
   <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="logout()">Sign out</button>
 </header>
 
-<div class="wrap" id="app" class="hidden">
+<div class="wrap hidden" id="app">
 
   <!-- DASHBOARD -->
   <div id="dash">
@@ -36,6 +48,15 @@
       </div>
     </div>
     <div class="card" id="cardList"></div>
+  </div>
+
+  <!-- LEADS INBOX -->
+  <div id="leadsView" class="hidden">
+    <div class="row" style="justify-content:space-between;margin:0 0 .4rem">
+      <h2 style="margin:0">Leads inbox</h2>
+      <button class="btn ghost sm" onclick="exportLeadsCsv()">Export CSV</button>
+    </div>
+    <div class="card" id="leadList"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
   <!-- DESIGNER -->
@@ -74,6 +95,8 @@
             <div><label>Facebook</label><input id="f_facebook" placeholder="https://"></div>
             <div><label>Instagram</label><input id="f_instagram" placeholder="https://"></div>
             <div><label>WhatsApp</label><input id="f_whatsapp" placeholder="233..."></div>
+            <div><label>TikTok</label><input id="f_tiktok" placeholder="@handle or https://"></div>
+            <div><label>Snapchat</label><input id="f_snapchat" placeholder="username or https://"></div>
           </div>
         </div>
 
@@ -96,6 +119,22 @@
           <div class="tplrow" id="tplRow"></div>
           <label style="margin-top:.7rem">Accent colour</label>
           <div class="row" id="swatches" style="gap:.5rem"></div>
+        </div>
+
+        <div class="card" style="margin-top:.8rem">
+          <h3 style="margin-top:0">Smart extras</h3>
+          <div class="grid cols-2">
+            <div><label>Payment link (Paystack)</label><input id="f_payment_url" placeholder="https://paystack.shop/pay/yourpage"></div>
+            <div><label>Payment button label</label><input id="f_payment_label" placeholder="Pay Me"></div>
+          </div>
+          <div class="small muted">Money goes straight to your own Paystack — the app never holds funds.</div>
+          <label style="margin-top:.6rem">Custom link (slug)</label>
+          <input id="f_slug" placeholder="e.g. bismark (auto-generated if empty)" autocapitalize="none" autocomplete="off">
+          <div class="small muted">⚠ Changing this after printing breaks the printed QR.</div>
+          <div class="row" style="margin-top:.6rem;gap:.4rem">
+            <button class="btn ghost sm" onclick="copyLink()">Copy link</button>
+            <button class="btn ghost sm" onclick="writeNfc()">Write to NFC card</button>
+          </div>
         </div>
       </div>
 
@@ -134,6 +173,9 @@
   </div>
 </div>
 
+<div id="modal" class="modalwrap hidden" onclick="if(event.target===this)closeModal()">
+  <div class="modalcard"><div class="mhead"><h3 id="mTitle"></h3><button class="btn ghost sm" onclick="closeModal()">✕ Close</button></div><div id="mBody"></div></div>
+</div>
 <div id="toast" class="toast hidden"></div>
 <script>
 const token=localStorage.getItem('hc_token');
@@ -146,17 +188,18 @@ const TEMPLATES=['corporate','executive','minimalist','premium','modern'];
 const ACCENTS=['#d99b16','#1f7a4d','#c0392b','#2a6f97','#7b2cbf','#171410'];
 let APP_URL='', SIDE='front', EDIT_ID=null, CARD={template:'corporate',accent:'#d99b16',photo:null,logo:null};
 
-async function guard(){if(!token){location.href='/';return false;}try{const me=await api('/api/me');APP_URL=me.app_url;}catch{location.href='/';return false;}return true;}
+async function guard(){if(!token){location.href='/';return false;}try{const me=await api('/api/me');APP_URL=me.app_url;}catch{localStorage.removeItem('hc_token');location.href='/';return false;}return true;}
 
 /* ============ dashboard ============ */
-function showDash(){document.getElementById('editor').classList.add('hidden');document.getElementById('dash').classList.remove('hidden');loadDash();}
+function showDash(){document.getElementById('editor').classList.add('hidden');document.getElementById('leadsView').classList.add('hidden');document.getElementById('dash').classList.remove('hidden');loadDash();}
 async function loadDash(){
   const o=await api('/api/overview');APP_URL=o.app_url;
   document.getElementById('metrics').innerHTML=`
     <div class="stat"><div class="k">Total cards</div><div class="v">${o.total}</div></div>
     <div class="stat"><div class="k">Active</div><div class="v" style="color:var(--k-green)">${o.active}</div></div>
     <div class="stat"><div class="k">QR scans</div><div class="v" style="color:var(--accent)">${o.scans}</div></div>
-    <div class="stat"><div class="k">Contacts saved</div><div class="v">${o.downloads}</div></div>`;
+    <div class="stat"><div class="k">Contacts saved</div><div class="v">${o.downloads}</div></div>
+    <div class="stat" style="cursor:pointer" onclick="showLeads()"><div class="k">Leads 📩</div><div class="v" style="color:var(--k-gold)">${o.leads}</div></div>`;
   const {cards}=await api('/api/cards');
   document.getElementById('cardList').innerHTML=cards.length?cards.map(c=>`
     <div class="cardItem">
@@ -165,6 +208,8 @@ async function loadDash(){
         <div class="small muted">👁 ${c.scan_count} scans · ＋${c.vcard_downloads} saved</div></div>
       <div class="row" style="gap:.35rem">
         <a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank">Open</a>
+        <button class="btn ghost sm" onclick="statsCard(${c.id})">Stats</button>
+        <button class="btn ghost sm" onclick="sigCard(${c.id})">Sig</button>
         <button class="btn ghost sm" onclick="editCard(${c.id})">Edit</button>
         <button class="btn ghost sm" onclick="toggleCard(${c.id})">${c.active?'Disable':'Enable'}</button>
         <button class="btn red sm" onclick="delCard(${c.id})">✕</button>
@@ -176,14 +221,15 @@ async function delCard(id){if(!confirm('Delete this card? The QR will stop worki
 
 /* ============ editor ============ */
 function newCard(){EDIT_ID=null;CARD={template:'corporate',accent:'#d99b16',photo:null,logo:null};fillForm({});openEditor();}
-async function editCard(id){const {card}=await api('/api/cards/'+id);EDIT_ID=id;CARD={template:card.template||'corporate',accent:card.accent||'#d99b16',photo:card.photo,logo:card.logo};fillForm(card);openEditor();}
-function openEditor(){document.getElementById('dash').classList.add('hidden');document.getElementById('editor').classList.remove('hidden');renderTpl();renderSwatches();SIDE='front';setSideBtns();draw();}
-const FORM_FIELDS=['first','middle','last','job_title','company','mobile','secondary','email','website','address','city','country','linkedin','x_twitter','facebook','instagram','whatsapp','slogan'];
+async function editCard(id){const {card}=await api('/api/cards/'+id);EDIT_ID=id;CARD={slug:card.slug,template:card.template||'corporate',accent:card.accent||'#d99b16',photo:card.photo,logo:card.logo};fillForm(card);openEditor();}
+function openEditor(){document.getElementById('dash').classList.add('hidden');document.getElementById('leadsView').classList.add('hidden');document.getElementById('editor').classList.remove('hidden');renderTpl();renderSwatches();SIDE='front';setSideBtns();draw();}
+const FORM_FIELDS=['first','middle','last','job_title','company','mobile','secondary','email','website','address','city','country','linkedin','x_twitter','facebook','instagram','whatsapp','tiktok','snapchat','payment_url','payment_label','slogan'];
 function fillForm(c){
   document.getElementById('f_first').value=c.first_name||'';
   document.getElementById('f_middle').value=c.middle_name||'';
   document.getElementById('f_last').value=c.last_name||'';
   for(const f of FORM_FIELDS){const el=document.getElementById('f_'+f);if(el&&!['first','middle','last'].includes(f))el.value=c[f]||'';}
+  document.getElementById('f_slug').value=c.slug||'';
   setImg('photo',CARD.photo);setImg('logo',CARD.logo);
 }
 function collect(){
@@ -191,7 +237,8 @@ function collect(){
   return {first_name:g('f_first'),middle_name:g('f_middle'),last_name:g('f_last'),
     job_title:g('f_job_title'),company:g('f_company'),mobile:g('f_mobile'),secondary:g('f_secondary'),
     email:g('f_email'),website:g('f_website'),address:g('f_address'),city:g('f_city'),country:g('f_country'),
-    linkedin:g('f_linkedin'),x_twitter:g('f_x_twitter'),facebook:g('f_facebook'),instagram:g('f_instagram'),whatsapp:g('f_whatsapp'),
+    linkedin:g('f_linkedin'),x_twitter:g('f_x_twitter'),facebook:g('f_facebook'),instagram:g('f_instagram'),whatsapp:g('f_whatsapp'),tiktok:g('f_tiktok'),snapchat:g('f_snapchat'),
+    payment_url:g('f_payment_url'),payment_label:g('f_payment_label'),
     slogan:g('f_slogan'),template:CARD.template,accent:CARD.accent,photo:CARD.photo||null,logo:CARD.logo||null};
 }
 function renderTpl(){document.getElementById('tplRow').innerHTML=TEMPLATES.map(t=>`<div class="tpl ${t===CARD.template?'on':''}" onclick="pickTpl('${t}')">${t[0].toUpperCase()+t.slice(1)}</div>`).join('');}
@@ -227,10 +274,10 @@ function cardSVG(side){
   const name=[c.first_name,c.middle_name,c.last_name].filter(Boolean).join(' ')||'Your Name';
   const ctx={name,company:c.company,job:c.job_title,logo:CARD.logo,photo:CARD.photo,accent:CARD.accent,slogan:c.slogan,url:EDIT_ID?url:(APP_URL||location.origin)+'/c/preview'};
   const inner=(side==='back'?BACK:FRONT)[CARD.template]?.(ctx)||FRONT.corporate(ctx);
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" font-family="Arial, Helvetica, sans-serif">${inner}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">${inner}</svg>`;
 }
 const tx=s=>esc(s||'');
-function logoTag(logo,x,y,w,h){return logo?`<image xlink:href="${logo}" href="${logo}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`:'';}
+function logoTag(logo,x,y,w,h){return logo?`<image href="${logo}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>`:'';}
 /* ---- FRONT templates: name + logo + QR only ---- */
 const FRONT={
   corporate:c=>`<rect width="${W}" height="${H}" fill="#f7f2e7"/><rect width="20" height="${H}" fill="${c.accent}"/>
@@ -275,61 +322,141 @@ const BACK={
 function backGeneric(c,bg,fg){return `<rect width="${W}" height="${H}" fill="${bg}"/>
   ${c.logo?logoTag(c.logo,(W-260)/2,120,260,120):`<text x="${W/2}" y="240" text-anchor="middle" fill="${fg}" font-size="46" font-weight="700">${tx(c.company||c.name)}</text>`}
   ${c.slogan?`<text x="${W/2}" y="380" text-anchor="middle" fill="${fg}" font-size="26">${tx(c.slogan)}</text>`:''}
-  ${qrSvg(c.url,(W-180)/2,430,180,fg==='#171410'?'#171410':'#171410').replace('fill="#ffffff"','fill="'+(bg==='#ffffff'?'#f3eddf':'#ffffff')+'"')}`;}
+  ${qrSvg(c.url,(W-180)/2,430,180,'#171410').replace('fill="#ffffff"','fill="'+(bg==='#ffffff'?'#f3eddf':'#ffffff')+'"')}`;}
 
 function draw(){document.getElementById('cardHolder').innerHTML=cardSVG(SIDE);}
 
 /* ============ save ============ */
 async function saveCard(){
   try{const body=collect();
+    const sl=document.getElementById('f_slug').value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/^-+|-+$/g,'');
+    if(sl)body.slug=sl;
     if(!body.first_name&&!body.last_name){toast('Enter at least a name');return;}
     if(EDIT_ID){await api('/api/cards/'+EDIT_ID,{method:'PUT',body:JSON.stringify(body)});toast('Saved');}
     else{const r=await api('/api/cards',{method:'POST',body:JSON.stringify(body)});EDIT_ID=r.id;CARD.slug=r.slug;toast('Card created — QR link is live');}
-    const {card}=await api('/api/cards/'+EDIT_ID);CARD.slug=card.slug;draw();
+    const {card}=await api('/api/cards/'+EDIT_ID);CARD.slug=card.slug;document.getElementById('f_slug').value=card.slug;draw();
   }catch(e){toast(e.message);}
 }
 
+/* ============ copy link + Web NFC ============ */
+function copyLink(){if(!CARD.slug){toast('Save the card first');return;}
+  const u=(APP_URL||location.origin)+'/c/'+CARD.slug;
+  (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast('Link copied'),
+    ()=>{prompt('Copy your card link:',u);});}
+async function writeNfc(){
+  if(!CARD.slug){toast('Save the card first');return;}
+  if(!('NDEFReader' in window)){toast('NFC writing needs Chrome on Android');return;}
+  try{toast('Hold a blank NFC card against the phone…');
+    const n=new NDEFReader();
+    await n.write({records:[{recordType:'url',data:(APP_URL||location.origin)+'/c/'+CARD.slug}]});
+    toast('✓ NFC card written — tap it on any phone to test');}
+  catch(e){toast('NFC write failed: '+(e.message||e));}}
+
+/* ============ modal ============ */
+function openModal(title,html){document.getElementById('mTitle').textContent=title;document.getElementById('mBody').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
+function closeModal(){document.getElementById('modal').classList.add('hidden');}
+
+/* ============ leads inbox ============ */
+let LEADS=[];
+function showLeads(){document.getElementById('editor').classList.add('hidden');document.getElementById('dash').classList.add('hidden');document.getElementById('leadsView').classList.remove('hidden');loadLeads();}
+async function loadLeads(){
+  try{const {leads}=await api('/api/leads');LEADS=leads;
+    document.getElementById('leadList').innerHTML=leads.length?leads.map(l=>{
+      const who=[l.name,l.company].filter(Boolean).join(' · ')||'(no name)';
+      const card=[l.cf,l.cl].filter(Boolean).join(' ');
+      const wa=l.phone?`<a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/${esc(String(l.phone).replace(/[^\d]/g,''))}">WhatsApp</a>`:'';
+      const tel=l.phone?`<a class="btn ghost sm" href="tel:${esc(l.phone)}">Call</a>`:'';
+      const em=l.email?`<a class="btn ghost sm" href="mailto:${esc(l.email)}">Email</a>`:'';
+      return `<div class="leadrow"><div>
+        <strong>${esc(who)}</strong>
+        <div class="small muted">${esc(l.phone||'')}${l.email?' · '+esc(l.email):''}</div>
+        ${l.note?`<div class="small">“${esc(l.note)}”</div>`:''}
+        <div class="small muted">via ${esc(card||l.cslug||'card')} · ${esc(l.at)} UTC</div>
+      </div><div class="row" style="gap:.3rem;flex-wrap:wrap;justify-content:flex-end">${wa}${tel}${em}
+        <button class="btn red sm" onclick="delLead(${l.id})">✕</button></div></div>`;
+    }).join(''):'<p class="muted center" style="padding:1rem">No leads yet. When someone scans your card and shares their details back, they land here.</p>';
+  }catch(e){toast(e.message);}}
+async function delLead(id){if(!confirm('Delete this lead?'))return;try{await api('/api/leads/'+id,{method:'DELETE'});loadLeads();}catch(e){toast(e.message);}}
+function exportLeadsCsv(){
+  if(!LEADS.length){toast('No leads to export');return;}
+  const cols=['at','name','phone','email','company','note','cslug'];
+  const csv=[['date','name','phone','email','company','note','card'].join(',')]
+    .concat(LEADS.map(l=>cols.map(k=>{const v=String(l[k]??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(','))).join('\r\n');
+  dl(URL.createObjectURL(new Blob([csv],{type:'text/csv'})),'halocard-leads.csv');}
+
+/* ============ per-card analytics ============ */
+async function statsCard(id){
+  try{const a=await api('/api/cards/'+id+'/analytics');
+    const pills=Object.entries(a.clicks).sort((x,y)=>y[1]-x[1]).map(([k,n])=>`<span class="clickpill">${esc(k.replace('x_twitter','X'))}: ${n}</span>`).join('')||'<span class="muted small">No link taps yet</span>';
+    const byDay={};a.days.forEach(d=>byDay[d.d]=d);
+    const days=[];for(let i=29;i>=0;i--){const dt=new Date(Date.now()-i*86400000).toISOString().slice(0,10);days.push(byDay[dt]||{d:dt,scans:0,saves:0,leads:0});}
+    const max=Math.max(1,...days.map(d=>d.scans+d.saves+d.leads));
+    const bw=560/30;
+    const bars=days.map((d,i)=>{const h=Math.round((d.scans+d.saves+d.leads)/max*80);
+      return `<rect x="${(i*bw+2).toFixed(1)}" y="${90-h}" width="${(bw-4).toFixed(1)}" height="${h||1}" rx="2" fill="${h?'#d99b16':'#eee2c5'}"><title>${d.d}: ${d.scans} scans, ${d.saves} saves, ${d.leads} leads</title></rect>`;}).join('');
+    openModal('Card analytics',`
+      <div class="metricGrid" style="margin-bottom:.6rem">
+        <div class="stat"><div class="k">Scans</div><div class="v">${a.scans}</div></div>
+        <div class="stat"><div class="k">Saved</div><div class="v" style="color:var(--k-green)">${a.saves}</div></div>
+        <div class="stat"><div class="k">Leads</div><div class="v" style="color:var(--k-gold)">${a.leads}</div></div>
+      </div>
+      <label>Activity — last 30 days</label>
+      <svg viewBox="0 0 560 92" style="width:100%;background:#fdfaf2;border:1px solid #eee7d4;border-radius:10px">${bars}</svg>
+      <label style="margin-top:.6rem">Link taps</label>
+      <div class="clickgrid">${pills}</div>`);
+  }catch(e){toast(e.message);}}
+
+/* ============ email signature ============ */
+async function sigCard(id){
+  try{const {card,url}=await api('/api/cards/'+id);
+    const acc=card.accent||'#d99b16';
+    const name=[card.first_name,card.last_name].filter(Boolean).join(' ');
+    const line2=[card.job_title,card.company].filter(Boolean).join(' — ');
+    const bits=[card.mobile?`<a href="tel:${card.mobile}" style="color:#171410;text-decoration:none">${card.mobile}</a>`:'',
+      card.email?`<a href="mailto:${card.email}" style="color:#171410;text-decoration:none">${card.email}</a>`:''].filter(Boolean).join(' &nbsp;·&nbsp; ');
+    const sig=`<table cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#171410"><tr><td style="border-left:4px solid ${acc};padding:2px 0 2px 12px"><strong style="font-size:15px">${name}</strong><br><span style="color:#6b6256">${line2}</span><br>${bits}<br><a href="${url}" style="color:${acc};font-weight:bold;text-decoration:none">&#128196; View my digital card &amp; socials</a></td></tr></table>`;
+    openModal('Email signature',`
+      <p class="small muted">Copy this HTML into your email client's signature editor (use "insert HTML" / paste directly in Gmail).</p>
+      <div style="border:1px solid #eee7d4;border-radius:10px;padding:.7rem;margin:.5rem 0;background:#fdfaf2">${sig}</div>
+      <textarea class="sigbox" id="sigTxt" readonly>${sig.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
+      <button class="btn sm" style="margin-top:.5rem" onclick="navigator.clipboard.writeText(document.getElementById('sigTxt').value).then(()=>toast('Signature HTML copied'))">Copy HTML</button>`);
+  }catch(e){toast(e.message);}}
+
 /* ============ exports ============ */
 function currentSVGString(){return cardSVG(SIDE);}
-function svgToImage(svgStr){return new Promise((res,rej)=>{const img=new Image();
-  img.onload=()=>res(img);
-  img.onerror=()=>rej(new Error('could not render the card image'));
-  // data-URL (not blob:) loads reliably on mobile WebKit and keeps the canvas un-tainted
-  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr);});}
-function saveBlob(blob,name){
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  if('download' in a){a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);}
-  else{ // iOS Safari ignores download attr — open so the user can long-press → Save
-    window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),10000); toast('Tap and hold the image to save it');
-  }
-}
+function svgToImage(svgStr){return new Promise((res,rej)=>{const img=new Image();const blob=new Blob([svgStr],{type:'image/svg+xml;charset=utf-8'});const u=URL.createObjectURL(blob);img.onload=()=>{URL.revokeObjectURL(u);res(img);};img.onerror=rej;img.src=u;});}
+function dl(href,name){const a=document.createElement('a');a.href=href;a.download=name;document.body.appendChild(a);a.click();a.remove();}
 const fileBase=()=>([document.getElementById('f_first').value,document.getElementById('f_last').value].filter(Boolean).join('-')||'halocard')+'-'+SIDE;
-function exportSVG(){try{const b=new Blob([currentSVGString()],{type:'image/svg+xml'});saveBlob(b,fileBase()+'.svg');}catch(e){toast('SVG export failed: '+e.message);}}
-async function renderCanvas(scale){const img=await svgToImage(currentSVGString());
-  if(img.decode){try{await img.decode();}catch{}}
-  const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;
-  const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
-function canvasToBlob(cv,type,q){return new Promise((res,rej)=>{if(cv.toBlob){cv.toBlob(b=>b?res(b):rej(new Error('blob failed')),type,q);}else{try{const d=cv.toDataURL(type,q),bin=atob(d.split(',')[1]),arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);res(new Blob([arr],{type}));}catch(e){rej(e);}}});}
-async function exportPNG(){try{const cv=await renderCanvas(3);const b=await canvasToBlob(cv,'image/png');saveBlob(b,fileBase()+'.png');}catch(e){toast('PNG export failed: '+e.message);}}
+function exportSVG(){const b=new Blob([currentSVGString()],{type:'image/svg+xml'});dl(URL.createObjectURL(b),fileBase()+'.svg');}
+async function renderCanvas(scale){const img=await svgToImage(currentSVGString());const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
+async function exportPNG(){try{const cv=await renderCanvas(2);dl(cv.toDataURL('image/png'),fileBase()+'.png');}catch(e){toast('Export failed');}}
 async function exportPDF(){
   try{
-    if(!window.jspdf||!window.jspdf.jsPDF){toast('PDF engine not loaded — refresh and retry');return;}
     let sel=document.getElementById('exSize').value, mmW,mmH;
     if(sel==='custom'){mmW=+document.getElementById('exW').value||85;mmH=+document.getElementById('exH').value||55;}
     else{[mmW,mmH]=sel.split(',').map(Number);}
     const bleed=3; const pageW=mmW+bleed*2, pageH=mmH+bleed*2;
-    const cv=await renderCanvas(4); const png=cv.toDataURL('image/png');
+    // warn if the chosen trim ratio strays far from the card artwork ratio (1004x650)
+    if(Math.abs((mmW/mmH)/(W/H)-1)>0.12) toast('Note: '+mmW+'\u00d7'+mmH+' mm differs from the card\u2019s shape \u2014 edges will be cropped to avoid distortion.');
+    // render the artwork COVER-scaled onto the full bleed page: aspect-correct, real 3 mm bleed
+    const img=await svgToImage(currentSVGString());
+    const pxPerMm=12; // ~305 DPI
+    const cv=document.createElement('canvas');cv.width=Math.round(pageW*pxPerMm);cv.height=Math.round(pageH*pxPerMm);
+    const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);
+    const s=Math.max(cv.width/W,cv.height/H), dw=W*s, dh=H*s;
+    g.drawImage(img,(cv.width-dw)/2,(cv.height-dh)/2,dw,dh);
+    const png=cv.toDataURL('image/png');
     const {jsPDF}=window.jspdf;
     const doc=new jsPDF({unit:'mm',format:[pageW,pageH],orientation:pageW>=pageH?'landscape':'portrait'});
-    doc.addImage(png,'PNG',bleed,bleed,mmW,mmH);
-    doc.setDrawColor(0);doc.setLineWidth(0.2);const L=3;
+    doc.addImage(png,'PNG',0,0,pageW,pageH);
+    // crop marks at the trim corners, drawn outward into the bleed
+    doc.setDrawColor(255,255,255);doc.setLineWidth(0.6);const L=3;
     const marks=[[bleed,bleed,-1,-1],[pageW-bleed,bleed,1,-1],[bleed,pageH-bleed,-1,1],[pageW-bleed,pageH-bleed,1,1]];
-    marks.forEach(([x,y,sx,sy])=>{doc.line(x,y,x+sx*L,y);doc.line(x,y,x,y+sy*L);});
-    try{doc.save(fileBase()+'.pdf');}catch{ // mobile fallback
-      const blob=doc.output('blob');saveBlob(blob,fileBase()+'.pdf');
-    }
-  }catch(e){toast('PDF export failed: '+e.message);}
+    const drawMarks=()=>marks.forEach(([x,y,sx,sy])=>{doc.line(x,y,x+sx*L,y);doc.line(x,y,x,y+sy*L);});
+    drawMarks(); // white underlay so marks stay visible on dark artwork
+    doc.setDrawColor(0);doc.setLineWidth(0.2);drawMarks();
+    doc.save(fileBase()+'.pdf');
+  }catch(e){toast('PDF export failed');}
 }
 
 /* ============ bulk CSV ============ */
@@ -337,9 +464,18 @@ function importCsv(input){const f=input.files[0];if(!f)return;const rd=new FileR
   rd.onload=async()=>{try{const rows=parseCsv(rd.result);if(!rows.length){toast('No rows found');return;}
     const r=await api('/api/cards/bulk',{method:'POST',body:JSON.stringify({rows})});toast('Created '+r.created+' cards');loadDash();
   }catch(e){toast(e.message);}finally{input.value='';}};rd.readAsText(f);}
-function parseCsv(text){const lines=text.split(/\r?\n/).filter(l=>l.trim());if(!lines.length)return[];
-  const head=lines[0].split(',').map(h=>h.trim().toLowerCase());const out=[];
-  for(let i=1;i<lines.length;i++){const cells=lines[i].split(',');const o={};head.forEach((h,j)=>o[h]=(cells[j]||'').trim());out.push(o);}return out;}
+function parseCsv(text){ /* RFC-4180: handles quoted fields, embedded commas, "" escapes, CRLF */
+  const rows=[];let row=[],cur='',q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}
+    else if(ch==='"')q=true;
+    else if(ch===','){row.push(cur);cur='';}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cur);cur='';if(row.some(c=>c.trim()))rows.push(row);row=[];}
+    else cur+=ch;}
+  if(cur!==''||row.length){row.push(cur);if(row.some(c=>c.trim()))rows.push(row);}
+  if(rows.length<2)return[];
+  const head=rows[0].map(h=>h.trim().toLowerCase());
+  return rows.slice(1).map(cells=>{const o={};head.forEach((h,j)=>o[h]=(cells[j]||'').trim());return o;});}
 
 (async()=>{if(await guard()){document.getElementById('app').classList.remove('hidden');showDash();}})();
 </script>
