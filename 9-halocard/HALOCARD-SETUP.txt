@@ -26,7 +26,27 @@ Features:
   • Export PNG, SVG, and print-ready PDF (300 DPI, bleed, crop marks;
     85×55 mm, 90×50 mm, or custom)
   • Dynamic profile page + live vCard ("Save to contacts")
+  • Linktree-style profile dashboard: photo, hero banner in the card's
+    accent, Save-to-Contacts button, Call/Email quick actions, and
+    brand-coloured social chips (WhatsApp, Instagram, Facebook, TikTok,
+    Snapchat, LinkedIn, X, Website) that deep-link straight to each
+    profile. Handles are accepted (e.g. @halo.gh) and auto-converted
+    to full URLs; full URLs pass through unchanged.
   • Scan + contact-saved tracking, per card and in the dashboard
+  • LEAD CAPTURE: every profile has a "Share your details back" form —
+    visitor's name/phone/email/note lands in your Leads inbox, with
+    one-tap WhatsApp / Call / Email reply buttons and CSV export
+  • PAY ME button: add your Paystack payment link in "Smart extras"
+    and the profile shows a payment button (money goes straight to
+    your own Paystack — the app never holds funds)
+  • Per-card analytics: 30-day activity chart + taps on every social
+    link (Stats button on each card)
+  • Custom links: choose your own slug (e.g. /c/bismark) in Smart
+    extras — careful: changing it after printing breaks printed QRs
+  • NFC: "Write to NFC card" button (Chrome on Android) writes your
+    card URL onto blank NTAG NFC cards — tap-to-share like Popl
+  • Email signature generator (Sig button on each card)
+  • WhatsApp link previews: shared card links show your photo (og:image)
   • Bulk create from a CSV (columns: name, company, position, phone, email)
   • Enable/disable a card (a disabled QR shows "no longer active")
 
