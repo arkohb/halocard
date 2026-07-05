@@ -27,10 +27,14 @@
 </head>
 <body>
 <header class="bar">
-  <div class="brand">Halo<span>Card</span> 🪪</div>
+  <a class="brand" href="/" style="text-decoration:none">Halo<span>Card</span> 🪪</a>
+  <span id="greet" class="small" style="color:#a99e8a;margin-left:.4rem"></span>
   <div class="spacer"></div>
   <button class="btn ghost sm" id="navCards" style="color:#fdf6e6;border-color:#4a443a" onclick="showDash()">My cards</button>
   <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="showLeads()">Leads</button>
+  <button class="btn ghost sm admin-only hidden" style="color:#fdf6e6;border-color:#4a443a" onclick="showUsers()">Users</button>
+  <button class="btn sm hidden" id="upgradeBtn" style="background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410" onclick="openPricing()">⭐ Upgrade</button>
+  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" title="Change password" onclick="openPwd()">🔑</button>
   <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="logout()">Sign out</button>
 </header>
 
@@ -42,7 +46,7 @@
     <div class="row" style="justify-content:space-between;margin:1.1rem 0 .4rem">
       <h2 style="margin:0">My cards</h2>
       <div class="row" style="gap:.4rem">
-        <button class="btn ghost sm" onclick="document.getElementById('csvFile').click()">Bulk CSV</button>
+        <button class="btn ghost sm admin-only hidden" onclick="document.getElementById('csvFile').click()">Bulk CSV</button>
         <input id="csvFile" type="file" accept=".csv" class="hidden" onchange="importCsv(this)">
         <button class="btn green" onclick="newCard()">+ New card</button>
       </div>
@@ -57,6 +61,12 @@
       <button class="btn ghost sm" onclick="exportLeadsCsv()">Export CSV</button>
     </div>
     <div class="card" id="leadList"><p class="muted center" style="padding:1rem">Loading…</p></div>
+  </div>
+
+  <!-- ADMIN: USERS -->
+  <div id="usersView" class="hidden">
+    <h2 style="margin:0 0 .4rem">Users</h2>
+    <div class="card" id="userList"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
   <!-- DESIGNER -->
@@ -131,6 +141,10 @@
           <label style="margin-top:.6rem">Custom link (slug)</label>
           <input id="f_slug" placeholder="e.g. bismark (auto-generated if empty)" autocapitalize="none" autocomplete="off">
           <div class="small muted">⚠ Changing this after printing breaks the printed QR.</div>
+          <div class="admin-only hidden">
+            <label style="margin-top:.6rem">Assign to user (email) — admin</label>
+            <input id="f_owner_email" placeholder="leave empty to keep it yours">
+          </div>
           <div class="row" style="margin-top:.6rem;gap:.4rem">
             <button class="btn ghost sm" onclick="copyLink()">Copy link</button>
             <button class="btn ghost sm" onclick="writeNfc()">Write to NFC card</button>
@@ -180,18 +194,29 @@
 <script>
 const token=localStorage.getItem('hc_token');
 const HDRS={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
-const api=(p,o={})=>fetch(p,{...o,headers:{...HDRS,...(o.headers||{})}}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'error');return d;});
+const api=(p,o={})=>fetch(p,{...o,headers:{...HDRS,...(o.headers||{})}}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok){if(d.upgrade)setTimeout(openPricing,600);throw new Error(d.error||'error');}return d;});
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.add('hidden'),3500);}
-function logout(){localStorage.removeItem('hc_token');location.href='/';}
+function logout(){localStorage.removeItem('hc_token');location.href='/login';}
+function openPwd(){openModal('Change password',`
+  <label>New password (6+ characters)</label><input id="npw" type="password" placeholder="••••••••">
+  <button class="btn sm" style="margin-top:.7rem" onclick="savePwd()">Update password</button>`);}
+async function savePwd(){try{const v=document.getElementById('npw').value;
+  await api('/api/change-password',{method:'POST',body:JSON.stringify({password:v})});
+  closeModal();toast('Password updated');}catch(e){toast(e.message);}}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const TEMPLATES=['corporate','executive','minimalist','premium','modern'];
 const ACCENTS=['#d99b16','#1f7a4d','#c0392b','#2a6f97','#7b2cbf','#171410'];
 let APP_URL='', SIDE='front', EDIT_ID=null, CARD={template:'corporate',accent:'#d99b16',photo:null,logo:null};
 
-async function guard(){if(!token){location.href='/';return false;}try{const me=await api('/api/me');APP_URL=me.app_url;}catch{localStorage.removeItem('hc_token');location.href='/';return false;}return true;}
+let ME={role:'user'};
+async function guard(){if(!token){location.href='/login';return false;}try{ME=await api('/api/me');APP_URL=ME.app_url;applyRole();}catch{localStorage.removeItem('hc_token');location.href='/login';return false;}return true;}
+function applyRole(){const admin=ME.role==='admin';document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!admin));
+  const g=document.getElementById('greet');if(g)g.textContent=(ME.name?ME.name.split(' ')[0]:ME.email.split('@')[0])+(admin?' · Admin':' · '+(ME.plan==='free'?'Free':ME.plan==='pro'?'Pro ⭐':'Business 👑'));
+  document.getElementById('upgradeBtn').classList.toggle('hidden',admin||ME.plan==='business');}
 
 /* ============ dashboard ============ */
-function showDash(){document.getElementById('editor').classList.add('hidden');document.getElementById('leadsView').classList.add('hidden');document.getElementById('dash').classList.remove('hidden');loadDash();}
+function hideAllViews(){for(const id of ['editor','leadsView','usersView','dash'])document.getElementById(id).classList.add('hidden');}
+function showDash(){hideAllViews();document.getElementById('dash').classList.remove('hidden');loadDash();}
 async function loadDash(){
   const o=await api('/api/overview');APP_URL=o.app_url;
   document.getElementById('metrics').innerHTML=`
@@ -207,6 +232,7 @@ async function loadDash(){
         <div class="small muted">${esc(c.job_title||'')}${c.company?' · '+esc(c.company):''} · ${esc(c.template)}</div>
         <div class="small muted">👁 ${c.scan_count} scans · ＋${c.vcard_downloads} saved</div></div>
       <div class="row" style="gap:.35rem">
+        ${c.owner?`<span class="small muted" style="align-self:center">${esc(c.owner)}</span>`:''}
         <a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank">Open</a>
         <button class="btn ghost sm" onclick="statsCard(${c.id})">Stats</button>
         <button class="btn ghost sm" onclick="sigCard(${c.id})">Sig</button>
@@ -222,7 +248,7 @@ async function delCard(id){if(!confirm('Delete this card? The QR will stop worki
 /* ============ editor ============ */
 function newCard(){EDIT_ID=null;CARD={template:'corporate',accent:'#d99b16',photo:null,logo:null};fillForm({});openEditor();}
 async function editCard(id){const {card}=await api('/api/cards/'+id);EDIT_ID=id;CARD={slug:card.slug,template:card.template||'corporate',accent:card.accent||'#d99b16',photo:card.photo,logo:card.logo};fillForm(card);openEditor();}
-function openEditor(){document.getElementById('dash').classList.add('hidden');document.getElementById('leadsView').classList.add('hidden');document.getElementById('editor').classList.remove('hidden');renderTpl();renderSwatches();SIDE='front';setSideBtns();draw();}
+function openEditor(){hideAllViews();document.getElementById('editor').classList.remove('hidden');renderTpl();renderSwatches();SIDE='front';setSideBtns();draw();}
 const FORM_FIELDS=['first','middle','last','job_title','company','mobile','secondary','email','website','address','city','country','linkedin','x_twitter','facebook','instagram','whatsapp','tiktok','snapchat','payment_url','payment_label','slogan'];
 function fillForm(c){
   document.getElementById('f_first').value=c.first_name||'';
@@ -250,10 +276,10 @@ function setSideBtns(){document.querySelectorAll('.side').forEach(b=>b.classList
 
 /* image upload → resized data URL */
 function pickImg(input,kind){const f=input.files[0];if(!f)return;const img=new Image();const rd=new FileReader();
-  rd.onload=()=>{img.onload=()=>{const max=kind==='photo'?480:360;let{width:w,height:h}=img;const s=Math.min(1,max/Math.max(w,h));
+  rd.onload=()=>{img.onload=()=>{const max=kind==='photo'?1200:800;/* print-grade */let{width:w,height:h}=img;const s=Math.min(1,max/Math.max(w,h));
     const cv=document.createElement('canvas');cv.width=Math.round(w*s);cv.height=Math.round(h*s);
     cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
-    CARD[kind]=cv.toDataURL(kind==='logo'?'image/png':'image/jpeg',0.85);setImg(kind,CARD[kind]);draw();};img.src=rd.result;};
+    CARD[kind]=cv.toDataURL(kind==='logo'?'image/png':'image/jpeg',0.92);setImg(kind,CARD[kind]);draw();};img.src=rd.result;};
   rd.readAsDataURL(f);}
 function clearImg(kind){CARD[kind]=null;setImg(kind,null);draw();}
 function setImg(kind,url){const im=document.getElementById('prev_'+kind),clr=document.getElementById('clr_'+kind);
@@ -331,6 +357,7 @@ async function saveCard(){
   try{const body=collect();
     const sl=document.getElementById('f_slug').value.trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/^-+|-+$/g,'');
     if(sl)body.slug=sl;
+    if(ME.role==='admin'&&!EDIT_ID){const oe=document.getElementById('f_owner_email').value.trim();if(oe)body.owner_email=oe;}
     if(!body.first_name&&!body.last_name){toast('Enter at least a name');return;}
     if(EDIT_ID){await api('/api/cards/'+EDIT_ID,{method:'PUT',body:JSON.stringify(body)});toast('Saved');}
     else{const r=await api('/api/cards',{method:'POST',body:JSON.stringify(body)});EDIT_ID=r.id;CARD.slug=r.slug;toast('Card created — QR link is live');}
@@ -358,7 +385,48 @@ function closeModal(){document.getElementById('modal').classList.add('hidden');}
 
 /* ============ leads inbox ============ */
 let LEADS=[];
-function showLeads(){document.getElementById('editor').classList.add('hidden');document.getElementById('dash').classList.add('hidden');document.getElementById('leadsView').classList.remove('hidden');loadLeads();}
+function showLeads(){hideAllViews();document.getElementById('leadsView').classList.remove('hidden');loadLeads();}
+function showUsers(){hideAllViews();document.getElementById('usersView').classList.remove('hidden');loadUsers();}
+async function loadUsers(){
+  try{const {users}=await api('/api/admin/users');
+    document.getElementById('userList').innerHTML=users.map(u=>`
+      <div class="leadrow"><div>
+        <strong>${esc(u.name||u.email)}</strong> ${u.role==='admin'?'<span class="clickpill">Admin</span>':''}
+        <div class="small muted">${esc(u.email)} · ${u.cards} card${u.cards==1?'':'s'} · joined ${esc((u.created_at||'').slice(0,10))}</div>
+        ${u.plan_expires?`<div class="small muted">plan until ${esc(u.plan_expires.slice(0,10))}</div>`:''}
+      </div><div class="row" style="gap:.3rem;align-items:center">
+        ${u.role==='admin'?'':`<select onchange="setPlan(${u.id},this.value)" style="padding:.4rem;border-radius:8px;border:1.5px solid #e6dcc6">
+          <option value="free" ${u.effective==='free'?'selected':''}>Free</option>
+          <option value="pro" ${u.effective==='pro'?'selected':''}>Pro</option>
+          <option value="business" ${u.effective==='business'?'selected':''}>Business</option>
+        </select>
+        <button class="btn red sm" onclick="delUser(${u.id},'${esc(u.email)}')">✕</button>`}
+      </div></div>`).join('');
+  }catch(e){toast(e.message);}}
+async function setPlan(id,plan){try{await api('/api/admin/users/'+id+'/plan',{method:'PUT',body:JSON.stringify({plan})});toast('Plan updated');loadUsers();}catch(e){toast(e.message);}}
+async function delUser(id,email){if(!confirm('Delete '+email+' and ALL their cards, leads and stats? This cannot be undone.'))return;
+  try{await api('/api/admin/users/'+id,{method:'DELETE'});toast('User deleted');loadUsers();}catch(e){toast(e.message);}}
+async function openPricing(){
+  try{const b=await api('/api/billing/plans');
+    const feat={free:['1 card','Kente profile + vCard','All socials + QR','4K PNG export'],
+      pro:[b.plans.pro.cards+' cards','Lead capture inbox','Pay Me button (MoMo)','Analytics + link taps','Custom link (slug)'],
+      business:[b.plans.business.cards+' cards','Everything in Pro','No HaloCard footer','Priority support']};
+    const col=(k)=>{const p=b.plans[k];const cur=b.current===k;
+      return `<div class="card" style="flex:1;min-width:150px;${cur?'border:2px solid var(--k-gold)':''}">
+        <h3 style="margin:0">${p.label}</h3>
+        <div style="font-size:1.4rem;font-weight:800;margin:.3rem 0">${p.price?('GHS '+p.price+'<span class="small muted">/yr</span>'):'GHS 0'}</div>
+        <ul class="small" style="padding-left:1.1rem;margin:.4rem 0">${feat[k].map(f=>'<li>'+f+'</li>').join('')}</ul>
+        ${cur?'<div class="clickpill">Current plan</div>':(k==='free'?'':`<button class="btn sm" onclick="buyPlan('${k}')">Upgrade</button>`)}
+      </div>`;};
+    openModal('Choose your plan',`<div class="row" style="gap:.7rem;flex-wrap:wrap;align-items:stretch">${col('free')}${col('pro')}${col('business')}</div>
+      ${b.expires&&b.current!=='free'?`<p class="small muted" style="margin-top:.6rem">Your ${b.current} plan renews/expires ${esc(b.expires.slice(0,10))}.</p>`:''}
+      <p class="small muted" style="margin-top:.4rem">Paid securely with MoMo or card via Paystack. Plans are yearly.</p>`);
+  }catch(e){toast(e.message);}}
+async function buyPlan(plan){
+  try{const r=await api('/api/billing/init',{method:'POST',body:JSON.stringify({plan})});
+    if(r.url&&!r.manual){location.href=r.url;return;}
+    if(r.manual)openModal('Upgrade to '+plan,'<p>'+esc(r.note||'')+'</p>'+(r.url?'<a class="btn" href="'+esc(r.url)+'" target="_blank" rel="noopener">Open payment page</a>':''));
+  }catch(e){toast(e.message);}}
 async function loadLeads(){
   try{const {leads}=await api('/api/leads');LEADS=leads;
     document.getElementById('leadList').innerHTML=leads.length?leads.map(l=>{
@@ -429,7 +497,7 @@ function dl(href,name){const a=document.createElement('a');a.href=href;a.downloa
 const fileBase=()=>([document.getElementById('f_first').value,document.getElementById('f_last').value].filter(Boolean).join('-')||'halocard')+'-'+SIDE;
 function exportSVG(){const b=new Blob([currentSVGString()],{type:'image/svg+xml'});dl(URL.createObjectURL(b),fileBase()+'.svg');}
 async function renderCanvas(scale){const img=await svgToImage(currentSVGString());const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
-async function exportPNG(){try{const cv=await renderCanvas(2);dl(cv.toDataURL('image/png'),fileBase()+'.png');}catch(e){toast('Export failed');}}
+async function exportPNG(){try{const cv=await renderCanvas(4);/* 4016x2600 — 4K, ~1200 DPI at 85mm */dl(cv.toDataURL('image/png'),fileBase()+'.png');}catch(e){toast('Export failed');}}
 async function exportPDF(){
   try{
     let sel=document.getElementById('exSize').value, mmW,mmH;
@@ -440,7 +508,7 @@ async function exportPDF(){
     if(Math.abs((mmW/mmH)/(W/H)-1)>0.12) toast('Note: '+mmW+'\u00d7'+mmH+' mm differs from the card\u2019s shape \u2014 edges will be cropped to avoid distortion.');
     // render the artwork COVER-scaled onto the full bleed page: aspect-correct, real 3 mm bleed
     const img=await svgToImage(currentSVGString());
-    const pxPerMm=12; // ~305 DPI
+    const pxPerMm=24; // ~610 DPI — professional print grade
     const cv=document.createElement('canvas');cv.width=Math.round(pageW*pxPerMm);cv.height=Math.round(pageH*pxPerMm);
     const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);
     const s=Math.max(cv.width/W,cv.height/H), dw=W*s, dh=H*s;
@@ -477,7 +545,15 @@ function parseCsv(text){ /* RFC-4180: handles quoted fields, embedded commas, ""
   const head=rows[0].map(h=>h.trim().toLowerCase());
   return rows.slice(1).map(cells=>{const o={};head.forEach((h,j)=>o[h]=(cells[j]||'').trim());return o;});}
 
-(async()=>{if(await guard()){document.getElementById('app').classList.remove('hidden');showDash();}})();
+(async()=>{if(await guard()){
+  document.getElementById('app').classList.remove('hidden');
+  const q=new URLSearchParams(location.search);
+  if(q.get('reference')||q.get('trxref')){toast('🎉 Payment received — your plan activates within a minute. Refresh shortly.');history.replaceState(null,'','/app');}
+  try{const {cards}=await api('/api/cards');
+    if(!cards.length){toast('Welcome! Let\u2019s design your first card ✨');newCard();return;}
+  }catch{}
+  showDash();
+}})();
 </script>
 <script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}</script>
 </body>

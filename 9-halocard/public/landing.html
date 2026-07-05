@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HaloCard — The business card that saves contacts, captures leads &amp; gets you paid</title>
+<meta name="description" content="One scan: they save your contact, follow your WhatsApp, Instagram &amp; TikTok, drop their number — and pay you with MoMo. Create your free kente smart card in 3 minutes.">
+<meta property="og:title" content="Your business card just got superpowers 🪪✨">
+<meta property="og:description" content="One scan → contact saved, socials followed, leads captured, MoMo paid. Create your free HaloCard in 3 minutes. Made in Ghana 🇬🇭">
+<meta property="og:type" content="website">
+<meta property="og:image" content="__BASE__/og-banner.png">
+<meta property="og:url" content="__BASE__/start">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="__BASE__/og-banner.png">
+<meta name="theme-color" content="#171410">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
+<style>
+:root{--gold:#d99b16;--goldhi:#f2c14e;--dark:#171410;--dark2:#221d16;--cream:#f7f2e7;--ink:#2a251d;--mut:#a99e8a;--red:#b23a2a;--green:#1f7a4d;--line:#332d24}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--dark);color:var(--cream);overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+ background:radial-gradient(60% 42% at 50% 0%, rgba(217,155,22,.2), transparent 70%),
+ repeating-linear-gradient(45deg, rgba(217,155,22,.045) 0 2px, transparent 2px 16px)}
+.wrap{max-width:1020px;margin:0 auto;padding:0 1.2rem;position:relative;z-index:1}
+.kente{display:block;width:100%;height:16px}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;font-weight:800;text-decoration:none;border-radius:14px;padding:.95rem 1.7rem;font-size:1.05rem;transition:transform .12s;cursor:pointer;border:none;font-family:inherit;position:relative;overflow:hidden}
+.btn:active{transform:scale(.97)}
+.btn.gold{background:linear-gradient(135deg,var(--goldhi),var(--gold));color:var(--dark);box-shadow:0 8px 26px rgba(217,155,22,.4)}
+.btn.gold::after{content:"";position:absolute;top:0;left:-80%;width:50%;height:100%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.5),transparent);animation:shine 3.2s infinite}
+@keyframes shine{0%{left:-80%}55%{left:130%}100%{left:130%}}
+.btn.ghost{background:transparent;color:#fdf6e6;border:1.5px solid #4a443a}
+.btn.big{font-size:1.15rem;padding:1.1rem 2.1rem;border-radius:16px}
+
+/* ---------- sticky top bar ---------- */
+.topbar{position:sticky;top:0;z-index:40;background:rgba(23,20,16,.88);backdrop-filter:blur(10px);border-bottom:1px solid #2b261e}
+.topbar .wrap{display:flex;align-items:center;gap:.8rem;padding-top:.65rem;padding-bottom:.65rem}
+.brand{font-weight:800;font-size:1.25rem;color:#fdf6e6;text-decoration:none}
+.brand span{color:var(--gold)}
+.topbar .btn{padding:.55rem 1.1rem;font-size:.92rem}
+.spacer{flex:1}
+
+/* ---------- hero ---------- */
+.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:2.4rem;align-items:center;padding:3.4rem 0 3rem}
+.pill{display:inline-flex;align-items:center;gap:.45rem;background:rgba(217,155,22,.14);border:1.5px solid rgba(217,155,22,.35);color:var(--goldhi);font-weight:800;font-size:.82rem;border-radius:999px;padding:.4rem .9rem;letter-spacing:.03em}
+h1{font-size:clamp(2.2rem,5.6vw,3.6rem);line-height:1.06;color:#fdf6e6;margin:.9rem 0 0}
+h1 .g{background:linear-gradient(120deg,var(--goldhi),var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{color:var(--mut);font-size:1.15rem;line-height:1.65;margin:1.1rem 0 1.5rem;max-width:33rem}
+.lede b{color:#e9ddc4}
+.ctarow{display:flex;gap:.8rem;flex-wrap:wrap;align-items:center}
+.sub-cta{font-size:.85rem;color:var(--mut)}
+.ticks{display:flex;gap:1.2rem;margin-top:1.4rem;flex-wrap:wrap}
+.tick{font-size:.88rem;color:var(--mut)}
+.tick b{color:var(--goldhi)}
+
+/* phone */
+.phonewrap{display:flex;justify-content:center;position:relative}
+.phone{width:280px;background:#0d0b09;border-radius:36px;padding:12px;box-shadow:0 30px 70px rgba(0,0,0,.65),0 0 0 1.5px #3a342b;transform:rotate(3deg)}
+.screen{background:var(--dark);border-radius:26px;overflow:hidden}
+.mk-band{height:10px;background:repeating-linear-gradient(90deg,var(--gold) 0 18px,var(--dark) 18px 22px,var(--red) 22px 36px,var(--dark) 36px 40px,var(--green) 40px 54px,var(--dark) 54px 58px)}
+.mk-hero{height:60px;background:linear-gradient(135deg,var(--gold),#8a6210)}
+.mk-frame{margin:-28px 10px 10px;padding:2.5px;border-radius:18px;background:repeating-linear-gradient(45deg,var(--gold) 0 9px,var(--dark) 9px 11px,var(--red) 11px 20px,var(--dark) 20px 22px,var(--green) 22px 31px,var(--dark) 31px 33px)}
+.mk-inner{background:var(--cream);color:var(--ink);border-radius:15.5px;padding:0 12px 12px;text-align:center}
+.mk-av{width:60px;height:60px;border-radius:50%;margin:-24px auto 6px;padding:3px;background:conic-gradient(var(--gold) 0 25%,var(--dark) 25% 28%,var(--red) 28% 50%,var(--dark) 50% 53%,var(--green) 53% 75%,var(--dark) 75% 78%,var(--gold) 78%)}
+.mk-av>div{width:100%;height:100%;border-radius:50%;background:var(--dark);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;border:2px solid var(--cream)}
+.mk-name{font-weight:800;font-size:.92rem;color:var(--dark)}
+.mk-title{font-size:.66rem;color:#8a6210;font-weight:700}
+.mk-save{background:var(--gold);color:var(--dark);font-weight:800;font-size:.7rem;border-radius:9px;padding:.5rem;margin-top:.5rem}
+.mk-pay{background:var(--dark);color:var(--goldhi);border:1.5px solid var(--gold);font-weight:800;font-size:.7rem;border-radius:9px;padding:.45rem;margin-top:.35rem}
+.mk-chips{display:flex;justify-content:center;gap:.4rem;margin-top:.5rem}
+.mk-chip{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:800;color:#fff;box-shadow:0 3px 8px rgba(0,0,0,.2)}
+.float{position:absolute;background:#fff;color:var(--ink);border-radius:12px;padding:.5rem .8rem;font-size:.78rem;font-weight:700;box-shadow:0 12px 30px rgba(0,0,0,.5);animation:bob 4s ease-in-out infinite}
+.float small{display:block;color:#8a8070;font-weight:600}
+.f1{top:8%;left:-12%;animation-delay:.4s}
+.f2{bottom:14%;right:-10%}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+
+/* marquee */
+.marq{overflow:hidden;border-top:1px solid #2b261e;border-bottom:1px solid #2b261e;padding:.8rem 0;background:rgba(34,29,22,.5)}
+.marq-track{display:flex;gap:2.6rem;white-space:nowrap;animation:roll 26s linear infinite;font-weight:700;color:var(--mut);font-size:.95rem}
+.marq-track span b{color:var(--goldhi)}
+@keyframes roll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* sections */
+section{padding:3.4rem 0}
+.k{font-size:.8rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+h2{font-size:clamp(1.6rem,3.6vw,2.3rem);color:#fdf6e6;margin:.4rem 0 1.4rem;line-height:1.15}
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .6s ease,transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+
+/* pain vs halo */
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.vcard{border-radius:20px;padding:1.5rem}
+.vcard.bad{background:var(--dark2);border:1.5px solid var(--line)}
+.vcard.good{background:var(--cream);color:var(--ink)}
+.vcard h3{margin-bottom:.8rem;font-size:1.15rem}
+.vcard.bad h3{color:#cfc4ad}.vcard.good h3{color:var(--dark)}
+.vcard li{list-style:none;padding:.4rem 0;font-size:.98rem;line-height:1.5}
+.vcard.bad li{color:var(--mut)}
+.vcard.good li{color:#4d4536}
+.vcard li::before{margin-right:.55rem}
+.vcard.bad li::before{content:"✗";color:var(--red);font-weight:800}
+.vcard.good li::before{content:"✓";color:var(--green);font-weight:800}
+
+/* features */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.feat{background:var(--dark2);border:1.5px solid var(--line);border-radius:20px;padding:1.4rem;transition:transform .15s,border-color .15s}
+.feat:hover{transform:translateY(-4px);border-color:var(--gold)}
+.feat .ic{font-size:1.7rem;margin-bottom:.6rem}
+.feat h3{color:#fdf6e6;font-size:1.05rem;margin-bottom:.4rem}
+.feat p{color:var(--mut);font-size:.93rem;line-height:1.55}
+.feat p b{color:#e9ddc4}
+
+/* audience */
+.aud{display:flex;gap:.6rem;flex-wrap:wrap}
+.aud span{background:rgba(217,155,22,.1);border:1.5px solid rgba(217,155,22,.3);color:#e9ddc4;border-radius:999px;padding:.5rem 1rem;font-weight:700;font-size:.92rem}
+
+/* pricing */
+.price3{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;align-items:stretch}
+.pcard{background:var(--dark2);border:1.5px solid var(--line);border-radius:22px;padding:1.6rem 1.4rem;display:flex;flex-direction:column}
+.pcard.hot{border:2px solid var(--gold);background:linear-gradient(180deg,rgba(217,155,22,.12),var(--dark2));position:relative}
+.pcard.hot::before{content:"MOST POPULAR";position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gold);color:var(--dark);font-size:.68rem;font-weight:800;letter-spacing:.1em;border-radius:999px;padding:.28rem .8rem}
+.pcard h3{color:#fdf6e6}
+.pval{font-size:1.9rem;font-weight:800;color:var(--goldhi);margin:.4rem 0}
+.pval small{font-size:.85rem;color:var(--mut);font-weight:600}
+.pcard li{list-style:none;color:var(--mut);padding:.32rem 0;font-size:.93rem}
+.pcard li::before{content:"✓";color:var(--gold);font-weight:800;margin-right:.5rem}
+.pcard .btn{margin-top:auto}
+.pcard ul{margin-bottom:1.2rem}
+
+/* faq */
+details{background:var(--dark2);border:1.5px solid var(--line);border-radius:14px;margin-bottom:.6rem;overflow:hidden}
+summary{cursor:pointer;padding:1rem 1.2rem;font-weight:700;color:#e9ddc4;list-style:none;display:flex;justify-content:space-between;align-items:center}
+summary::after{content:"+";color:var(--gold);font-size:1.3rem;font-weight:800}
+details[open] summary::after{content:"–"}
+details p{padding:0 1.2rem 1rem;color:var(--mut);line-height:1.6;font-size:.95rem}
+
+/* final */
+.final{background:linear-gradient(135deg,var(--goldhi),var(--gold) 55%,#8a6210);border-radius:26px;padding:3rem 1.6rem;text-align:center;position:relative;overflow:hidden}
+.final::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(-45deg,rgba(255,255,255,.07) 0 3px,transparent 3px 18px)}
+.final h2{color:var(--dark);margin:0 0 .5rem;position:relative;z-index:1}
+.final p{color:#3d2f0c;font-weight:600;margin-bottom:1.5rem;position:relative;z-index:1}
+.final .btn{position:relative;z-index:1;background:var(--dark);color:var(--goldhi);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+footer{padding:2rem 0 2.6rem;text-align:center;color:#7a7160;font-size:.88rem}
+footer b{color:var(--gold)}
+
+/* mobile sticky cta */
+.mcta{display:none}
+@media (max-width:840px){
+  .hero{grid-template-columns:1fr;padding-top:2.2rem;text-align:center}
+  .lede{margin-left:auto;margin-right:auto}
+  .ctarow,.ticks{justify-content:center}
+  .phonewrap{margin-top:1.6rem}
+  .f1{left:-2%}.f2{right:-2%}
+  .vs,.grid3,.price3{grid-template-columns:1fr}
+  .pcard.hot{order:-1}
+  .mcta{display:block;position:fixed;bottom:0;left:0;right:0;z-index:45;padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom));background:rgba(23,20,16,.92);backdrop-filter:blur(10px);border-top:1px solid #2b261e}
+  .mcta .btn{width:100%}
+  body{padding-bottom:74px}
+}
+</style>
+</head>
+<body>
+<svg class="kente" viewBox="0 0 560 26" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs><pattern id="kw" width="56" height="26" patternUnits="userSpaceOnUse">
+<rect width="56" height="26" fill="#d99b16"/><rect y="0" width="56" height="3" fill="#171410"/><rect y="23" width="56" height="3" fill="#171410"/>
+<rect x="0" y="3" width="14" height="20" fill="#b23a2a"/><rect x="28" y="3" width="14" height="20" fill="#1f7a4d"/>
+<rect x="16" y="6" width="10" height="3" fill="#171410"/><rect x="18" y="11.5" width="8" height="3" fill="#171410"/><rect x="16" y="17" width="10" height="3" fill="#171410"/>
+<rect x="44" y="6" width="10" height="3" fill="#171410"/><rect x="46" y="11.5" width="8" height="3" fill="#171410"/><rect x="44" y="17" width="10" height="3" fill="#171410"/>
+<rect x="2" y="8" width="10" height="2" fill="#f2c14e"/><rect x="2" y="15" width="10" height="2" fill="#f2c14e"/><rect x="30" y="8" width="10" height="2" fill="#f2c14e"/><rect x="30" y="15" width="10" height="2" fill="#f2c14e"/>
+</pattern></defs><rect width="560" height="26" fill="url(#kw)"/></svg>
+
+<div class="topbar"><div class="wrap">
+  <a class="brand" data-home href="/">Halo<span>Card</span> 🪪</a>
+  <div class="spacer"></div>
+  <a class="btn gold" data-cta href="/register">Create my free card</a>
+</div></div>
+
+<div class="wrap">
+<div class="hero">
+  <div>
+    <span class="pill">🇬🇭 Proudly made in Ghana · Kente-woven</span>
+    <h1>Your business card just got <span class="g">superpowers</span></h1>
+    <p class="lede">One scan and they <b>save your contact</b>, follow your <b>WhatsApp, Instagram &amp; TikTok</b>, drop their number in your inbox — and can even <b>pay you with MoMo</b> on the spot. Paper cards get thrown away. HaloCards get scanned.</p>
+    <div class="ctarow">
+      <a class="btn gold big" data-cta href="/register">Create my free card →</a>
+    </div>
+    <div class="sub-cta" style="margin-top:.6rem">Free forever plan · No app download · Ready in 3 minutes</div>
+    <div class="ticks">
+      <div class="tick"><b>1 scan</b> = contact saved</div>
+      <div class="tick"><b>8+</b> social links</div>
+      <div class="tick"><b>MoMo</b> payments built in</div>
+    </div>
+  </div>
+  <div class="phonewrap">
+    <div class="float f1">📩 New lead: Ama Serwaa<small>“Met you at the Accra expo”</small></div>
+    <div class="float f2">💳 Payment received<small>GHS 150 · MoMo</small></div>
+    <div class="phone"><div class="screen">
+      <div class="mk-band"></div><div class="mk-hero"></div>
+      <div class="mk-frame"><div class="mk-inner">
+        <div class="mk-av"><div>BA</div></div>
+        <div class="mk-name">Bismark Arko-Ofori</div>
+        <div class="mk-title">FOUNDER — HALO VENTURES</div>
+        <div class="mk-save">＋ SAVE TO CONTACTS</div>
+        <div class="mk-pay">💳 PAY ME · MOMO</div>
+        <div class="mk-chips">
+          <div class="mk-chip" style="background:#25D366">✆</div>
+          <div class="mk-chip" style="background:#E1306C">◉</div>
+          <div class="mk-chip" style="background:#010101">♪</div>
+          <div class="mk-chip" style="background:#FFFC00;color:#171410">👻</div>
+          <div class="mk-chip" style="background:#0A66C2">in</div>
+        </div>
+      </div></div>
+      <div class="mk-band" style="margin-top:2px"></div>
+    </div></div>
+  </div>
+</div>
+</div>
+
+<div class="marq"><div class="marq-track">
+  <span>Perfect for <b>entrepreneurs</b></span><span>·</span><span><b>realtors</b></span><span>·</span><span><b>MoMo agents</b></span><span>·</span><span><b>fashion designers</b></span><span>·</span><span><b>event planners</b></span><span>·</span><span><b>barbers &amp; salons</b></span><span>·</span><span><b>photographers</b></span><span>·</span><span><b>traders</b></span><span>·</span><span><b>authors</b></span><span>·</span>
+  <span>Perfect for <b>entrepreneurs</b></span><span>·</span><span><b>realtors</b></span><span>·</span><span><b>MoMo agents</b></span><span>·</span><span><b>fashion designers</b></span><span>·</span><span><b>event planners</b></span><span>·</span><span><b>barbers &amp; salons</b></span><span>·</span><span><b>photographers</b></span><span>·</span><span><b>traders</b></span><span>·</span><span><b>authors</b></span><span>·</span>
+</div></div>
+
+<div class="wrap">
+<section class="reveal">
+  <div class="k">The problem with paper</div>
+  <h2>90% of paper cards end up in the bin</h2>
+  <div class="vs">
+    <div class="vcard bad">
+      <h3>😩 Old paper card</h3>
+      <ul>
+        <li>Gets lost or thrown away</li>
+        <li>Number changes? Reprint everything</li>
+        <li>No socials, no WhatsApp, no payments</li>
+        <li>You never know who kept it</li>
+        <li>Reprints cost money every time</li>
+      </ul>
+    </div>
+    <div class="vcard good">
+      <h3>🪪 Your HaloCard</h3>
+      <ul>
+        <li>Saved into their phone in one tap</li>
+        <li>Edit anytime — printed QR never breaks</li>
+        <li>WhatsApp, IG, TikTok, Snapchat + Pay button</li>
+        <li>See every scan, tap and lead</li>
+        <li>One card. Forever. Free to start</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="k">What one scan does</div>
+  <h2>Six superpowers in every card</h2>
+  <div class="grid3">
+    <div class="feat"><div class="ic">🔄</div><h3>A QR that never dies</h3><p>Your QR opens your <b>live profile</b>. New number, new job, new business? Update once — <b>every printed card stays correct</b>.</p></div>
+    <div class="feat"><div class="ic">🧵</div><h3>Beautiful kente profile</h3><p>Your photo and brand wrapped in <b>real woven kente</b>. It feels premium because it is.</p></div>
+    <div class="feat"><div class="ic">📩</div><h3>Leads come to you</h3><p>Visitors drop their name &amp; number in one tap. Reply by <b>WhatsApp or call</b> straight from your inbox.</p></div>
+    <div class="feat"><div class="ic">💳</div><h3>Get paid on the spot</h3><p>A <b>Pay button</b> on your card — MoMo, card or bank via Paystack, straight to <b>your own account</b>.</p></div>
+    <div class="feat"><div class="ic">📊</div><h3>See what's working</h3><p>Scans, saves, leads and taps on <b>every single link</b>, charted over 30 days.</p></div>
+    <div class="feat"><div class="ic">🖨️</div><h3>Print-shop ready</h3><p><b>4K exports</b> with real print bleed — or skip paper entirely and <b>tap an NFC card</b> or share your link.</p></div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="k">Simple pricing</div>
+  <h2>Start free. Upgrade when it pays for itself.</h2>
+  <div class="price3">
+    <div class="pcard">
+      <h3>Free</h3><div class="pval">GHS 0</div>
+      <ul><li>1 smart card</li><li>Kente profile + save contact</li><li>All your social links</li><li>4K PNG export</li></ul>
+      <a class="btn ghost" data-cta href="/register">Start free</a>
+    </div>
+    <div class="pcard hot">
+      <h3>Pro</h3><div class="pval">GHS 120<small>/year</small></div>
+      <ul><li>5 cards</li><li>📩 Lead capture inbox</li><li>💳 Pay Me button (MoMo)</li><li>📊 Full analytics</li><li>Your own custom link</li></ul>
+      <a class="btn gold" data-cta href="/register">Go Pro — GHS 10/month</a>
+    </div>
+    <div class="pcard">
+      <h3>Business</h3><div class="pval">GHS 300<small>/year</small></div>
+      <ul><li>25 cards for your team</li><li>Everything in Pro</li><li>No HaloCard branding</li><li>Priority support</li></ul>
+      <a class="btn ghost" data-cta href="/register">Get Business</a>
+    </div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="k">Questions?</div>
+  <h2>Quick answers</h2>
+  <details><summary>Do people need an app to scan my card?</summary><p>No. Any phone camera scans the QR and opens your profile instantly in the browser. Saving your contact is one tap — no downloads, no sign-ups for them.</p></details>
+  <details><summary>What happens if I change my number?</summary><p>Just edit your card in the dashboard. The QR points to your live profile, so every card you've already printed or shared updates automatically. You never reprint.</p></details>
+  <details><summary>How do MoMo payments work?</summary><p>You connect your own Paystack payment link. When someone taps Pay on your card, they pay with MoMo, card, or bank — and the money goes directly to your own account. HaloCard never holds your money.</p></details>
+  <details><summary>Do I need to print anything?</summary><p>No — your card link works everywhere: WhatsApp status, Instagram bio, TikTok, email signature. Printing is optional, and if you do, exports are 4K print-shop quality. You can also write your card to an NFC tap card.</p></details>
+  <details><summary>Is the free plan really free?</summary><p>Yes — one full card with your kente profile, contact saving, and all your socials, free forever. Upgrade only when you want lead capture, payments, and analytics.</p></details>
+</section>
+
+<section class="reveal">
+  <div class="final">
+    <h2>Your next customer is one scan away</h2>
+    <p>Create your free HaloCard now — it takes 3 minutes on your phone.</p>
+    <a class="btn big" data-cta href="/register">🪪 Create my free card →</a>
+  </div>
+</section>
+
+<footer>Made with <b>HaloCard</b> · part of the Halo family · Built in Ghana 🇬🇭</footer>
+</div>
+
+<div class="mcta"><a class="btn gold" data-cta href="/register">🪪 Create my free card — it's free</a></div>
+
+<svg class="kente" viewBox="0 0 560 26" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="560" height="26" fill="url(#kw)"/></svg>
+
+<script>
+/* If hosting this page OUTSIDE the HaloCard app (e.g. Netlify), put your
+   full HaloCard address here, e.g. "https://halocard.up.railway.app".
+   Leave empty when served from the app itself. */
+var APP_URL = "";
+if (APP_URL) {
+  document.querySelectorAll("[data-cta]").forEach(function(a){ a.href = APP_URL + "/register"; });
+  document.querySelectorAll("[data-home]").forEach(function(a){ a.href = APP_URL + "/"; });
+}
+/* scroll reveal */
+var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } }); }, { threshold: .12 });
+document.querySelectorAll(".reveal").forEach(function(el){ io.observe(el); });
+</script>
+</body>
+</html>

@@ -13,17 +13,28 @@
 <meta name="apple-mobile-web-app-title" content="HaloCard">
 </head>
 <body>
-<header class="bar"><div class="brand">Halo<span>Card</span> 🪪</div></header>
+<header class="bar"><a class="brand" href="/" style="text-decoration:none">Halo<span>Card</span> 🪪</a></header>
 <div class="wrap" style="max-width:440px">
   <div class="card center" style="background:var(--dark);color:#fdf6e6;border:none">
     <h1 style="color:var(--k-gold)">Your contact, one scan away</h1>
-    <p class="small" style="color:#e9ddc4">Make smart QR contact cards for your Halo brands. Edit the details anytime — the printed QR never changes.</p>
+    <p class="small" style="color:#e9ddc4">Design your smart kente QR card in minutes. Edit the details anytime — the printed QR never changes.</p>
   </div>
-  <div class="card" style="margin-top:1rem">
+
+  <div class="card" id="loginBox" style="margin-top:1rem">
     <h3>Sign in</h3>
     <label>Email</label><input id="email" type="email" placeholder="you@halo.app">
     <label>Password</label><input id="pw" type="password" placeholder="••••••••">
     <div style="margin-top:.9rem"><button class="btn" onclick="login()">Sign in</button></div>
+    <p class="small" style="margin-top:.8rem">New here? <a href="#" onclick="showReg();return false" style="color:var(--k-gold);font-weight:700">Create a free account →</a></p>
+  </div>
+
+  <div class="card hidden" id="regBox" style="margin-top:1rem">
+    <h3>Create your free account</h3>
+    <label>Your name</label><input id="r_name" placeholder="Ama Serwaa">
+    <label>Email</label><input id="r_email" type="email" placeholder="you@example.com">
+    <label>Password</label><input id="r_pw" type="password" placeholder="8+ characters">
+    <div style="margin-top:.9rem"><button class="btn" onclick="register()">Create account &amp; design my card</button></div>
+    <p class="small" style="margin-top:.8rem">Already have one? <a href="#" onclick="showLogin();return false" style="color:var(--k-gold);font-weight:700">Sign in →</a></p>
   </div>
 </div>
 <div id="toast" class="toast hidden"></div>
@@ -31,11 +42,20 @@
 const api=(p,o={})=>fetch(p,o).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'error');return d;});
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.add('hidden'),3500);}
 if(localStorage.getItem('hc_token')) location.href='/app';
+function showReg(){document.getElementById('loginBox').classList.add('hidden');document.getElementById('regBox').classList.remove('hidden');}
+function showLogin(){document.getElementById('regBox').classList.add('hidden');document.getElementById('loginBox').classList.remove('hidden');}
+if(location.pathname==='/register')showReg();
 async function login(){
   try{const r=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:pw.value})});
     localStorage.setItem('hc_token',r.token);location.href='/app';}catch(e){toast(e.message);}
 }
+async function register(){
+  try{const r=await api('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:document.getElementById('r_name').value,email:document.getElementById('r_email').value,password:document.getElementById('r_pw').value})});
+    localStorage.setItem('hc_token',r.token);location.href='/app';}catch(e){toast(e.message);}
+}
 document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+document.getElementById('r_pw').addEventListener('keydown',e=>{if(e.key==='Enter')register();});
 </script>
 <script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}</script>
 </body>
