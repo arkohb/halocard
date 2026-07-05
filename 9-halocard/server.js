@@ -49,13 +49,41 @@ CREATE TABLE IF NOT EXISTS leads(
 for (const col of ["tiktok", "snapchat", "payment_url", "payment_label"]) {
   try { db.exec(`ALTER TABLE cards ADD COLUMN ${col} TEXT`); } catch { /* already exists */ }
 }
+try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN name TEXT"); } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN plan_expires TEXT"); } catch {}
+try { db.exec("ALTER TABLE cards ADD COLUMN user_id INTEGER"); } catch {}
+/* the original single account becomes the admin; existing cards belong to them */
+db.prepare("UPDATE users SET role='admin' WHERE email=?").run(ADMIN_EMAIL);
+const _adm = db.prepare("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").get();
+if (_adm) db.prepare("UPDATE cards SET user_id=? WHERE user_id IS NULL").run(_adm.id);
+/* ---------- plans & billing ---------- */
+const PLANS = {
+  free:     { label: "Free",     cards: Number(process.env.CARDS_FREE || 1),  price: 0 },
+  pro:      { label: "Pro",      cards: Number(process.env.CARDS_PRO || 5),  price: Number(process.env.PRICE_PRO_GHS || 120) },
+  business: { label: "Business", cards: Number(process.env.CARDS_BUSINESS || 25), price: Number(process.env.PRICE_BUSINESS_GHS || 300) },
+};
+const BILLING_PERIOD_DAYS = Number(process.env.BILLING_PERIOD_DAYS || 365); /* annual */
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
+const PAYSTACK_UPGRADE_URL = process.env.PAYSTACK_UPGRADE_URL || ""; /* fallback: manual payment page */
+/* effective plan (admin = business; paid plans lapse to free on expiry) */
+function planOf(u) {
+  if (!u) return "free";
+  if (u.role === "admin") return "business";
+  let p = PLANS[u.plan] ? u.plan : "free";
+  if (p !== "free" && u.plan_expires && Date.parse(u.plan_expires) < Date.now()) p = "free";
+  return p;
+}
+const planAtLeast = (p, min) => ({ free: 0, pro: 1, business: 2 }[p] >= { free: 0, pro: 1, business: 2 }[min]);
+function ownerPlanForCard(c) { const u = c.user_id ? db.prepare("SELECT * FROM users WHERE id=?").get(c.user_id) : null; return planOf(u); }
 
 /* seed the single admin */
 (function seedAdmin() {
   if (db.prepare("SELECT id FROM users LIMIT 1").get()) return;
   const pass = ADMIN_PASSWORD || crypto.randomBytes(6).toString("hex");
   const salt = crypto.randomBytes(16).toString("hex");
-  db.prepare("INSERT INTO users(email,pass_hash,salt) VALUES (?,?,?)").run(ADMIN_EMAIL, hashPassword(pass, salt), salt);
+  db.prepare("INSERT INTO users(email,pass_hash,salt,role,name) VALUES (?,?,?,'admin','Admin')").run(ADMIN_EMAIL, hashPassword(pass, salt), salt);
   console.log("==================================================");
   console.log(" HALOCARD ADMIN  login: " + ADMIN_EMAIL + "   password: " + pass);
   console.log(" (set ADMIN_EMAIL / ADMIN_PASSWORD to control this)");
@@ -220,7 +248,8 @@ const ICONS = {
   x: `<svg viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="currentColor">&#120143;</text></svg>`,
   save: `<svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
 };
-function profilePage(c, base) {
+function profilePage(c, base, plan = "business") {
+  const PRO = planAtLeast(plan, "pro"), BIZ = planAtLeast(plan, "business");
   const accent = /^#[0-9a-fA-F]{3,8}$/.test(String(c.accent || "")) ? c.accent : "#d99b16";
   const name = esc(fullName(c)) || "Contact", title = esc(c.job_title || ""), company = esc(c.company || "");
   const initials = esc(((c.first_name || "?")[0] || "?") + ((c.last_name || "")[0] || "")).toUpperCase();
@@ -342,11 +371,11 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
       ${company ? `<div class="pcompany">${company}</div>` : ""}
     </div>
     <a class="save" href="/c/${esc(c.slug)}/vcard.vcf">${ICONS.save} Save to Contacts</a>
-    ${c.payment_url ? `<a class="save pay" href="/c/${esc(c.slug)}/go/pay" target="_blank" rel="noopener">&#128179; ${esc(vv(c.payment_label) || "Pay Me")}</a>` : ""}
+    ${PRO && c.payment_url ? `<a class="save pay" href="/c/${esc(c.slug)}/go/pay" target="_blank" rel="noopener">&#128179; ${esc(vv(c.payment_label) || "Pay Me")}</a>` : ""}
     ${actions.length ? `<div class="acts">${actions.join("")}</div>` : ""}
     ${chips.length ? `<div class="sect">Connect with me</div><div class="chips">${chipHtml}</div>` : ""}
     ${rows.length ? `<div class="sect">Contact details</div><div class="rows">${rows.join("")}</div>` : ""}
-    <div class="sect">Share your details back</div>
+    ${PRO ? `<div class="sect">Share your details back</div>
     <div class="leadbox">
       <input id="ln" maxlength="120" placeholder="Your name">
       <input id="lp" maxlength="40" placeholder="Phone / WhatsApp" inputmode="tel">
@@ -354,12 +383,12 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
       <textarea id="lm" maxlength="500" rows="2" placeholder="Message (optional)"></textarea>
       <button id="lbtn" class="save" style="margin-top:.55rem">&#128233; Send my details to ${esc(c.first_name || "them")}</button>
       <div id="lmsg" class="lmsg" hidden></div>
-    </div>
-    <div class="foot">Made with <b>HaloCard</b></div>
+    </div>` : ""}
+    ${BIZ ? "" : `<div class="foot">Made with <a href="/" style="color:inherit;text-decoration:none"><b>HaloCard</b></a></div>`}
   </div></div>
   <div style="padding:16px 26px 0">${kenteBand("bot").replace('class="kente-band"','class="kente-band slim"')}</div>
 </div>
-<script>
+${PRO ? `<script>
 (function(){
   var b=document.getElementById('lbtn'),m=document.getElementById('lmsg');
   b.addEventListener('click',function(){
@@ -374,21 +403,25 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
     .catch(function(e){b.disabled=false;b.textContent='\uD83D\uDCE9 Try again';m.hidden=false;m.textContent=e.message;m.className='lmsg err';});
   });
 })();
-</script>
+</script>` : ""}
 </body></html>`;
 }
 
 /* ---------- static files ---------- */
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".map": "application/json" };
-const PAGES = { "/": "index.html", "/app": "app.html" };
-function serveStatic(res, pathname) {
+const PAGES = { "/": "home.html", "/login": "index.html", "/register": "index.html", "/app": "app.html", "/start": "landing.html" };
+function serveStatic(req, res, pathname) {
   const rel = PAGES[pathname] || pathname.replace(/^\/+/, "");
   const pubDir = path.join(__dirname, "public");
   const full = path.join(pubDir, rel);
   if (!full.startsWith(pubDir + path.sep)) { res.writeHead(403); return res.end("forbidden"); }
   fs.readFile(full, (err, buf) => {
     if (err) { res.writeHead(404, { "Content-Type": "text/html" }); return res.end("<h1>404</h1>"); }
-    res.writeHead(200, { "Content-Type": MIME[path.extname(full)] || "application/octet-stream" }); res.end(buf);
+    const type = MIME[path.extname(full)] || "application/octet-stream";
+    /* html pages may carry a __BASE__ token so social crawlers get absolute og:image URLs */
+    if (path.extname(full) === ".html") buf = Buffer.from(buf.toString().split("__BASE__").join(baseUrl(req)));
+    res.writeHead(200, { "Content-Type": type, "Content-Length": buf.length });
+    res.end(req.method === "HEAD" ? undefined : buf);
   });
 }
 
@@ -432,7 +465,7 @@ const server = http.createServer(async (req, res) => {
         linkedin: c.linkedin ? socialUrl("linkedin", c.linkedin) : "",
         x_twitter: c.x_twitter ? socialUrl("x_twitter", c.x_twitter) : "",
         website: c.website ? socialUrl("website", c.website) : "",
-        pay: c.payment_url ? socialUrl("website", c.payment_url) : "",
+        pay: c.payment_url && planAtLeast(ownerPlanForCard(c), "pro") ? socialUrl("website", c.payment_url) : "",
       };
       const target = targets[kind];
       if (!target || !/^https:\/\//i.test(target)) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("Not found"); }
@@ -450,11 +483,31 @@ const server = http.createServer(async (req, res) => {
       return res.end(Buffer.from(mm[2], "base64"));
     }
 
+    /* Paystack webhook: auto-upgrade on successful payment */
+    if (req.method === "POST" && p === "/api/paystack/webhook") {
+      if (!PAYSTACK_SECRET_KEY) { res.writeHead(404); return res.end(); }
+      const raw = await readBody(req);
+      const sig = crypto.createHmac("sha512", PAYSTACK_SECRET_KEY).update(raw).digest("hex");
+      if (!safeEqual(sig, String(req.headers["x-paystack-signature"] || ""))) { res.writeHead(401); return res.end(); }
+      let ev; try { ev = JSON.parse(raw); } catch { res.writeHead(400); return res.end(); }
+      if (ev.event === "charge.success") {
+        const md = (ev.data && ev.data.metadata) || {};
+        const uid = Number(md.uid), plan = String(md.plan || "");
+        if (uid && PLANS[plan] && plan !== "free") {
+          const expires = new Date(Date.now() + BILLING_PERIOD_DAYS * 86400000).toISOString();
+          db.prepare("UPDATE users SET plan=?, plan_expires=? WHERE id=?").run(plan, expires, uid);
+          console.log(`billing: user ${uid} upgraded to ${plan} until ${expires}`);
+        }
+      }
+      res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"ok":true}');
+    }
+
     /* public: visitor shares their details back (lead capture) */
     if (req.method === "POST" && p === "/api/public/lead") {
       const b = await jread(req);
-      const c = db.prepare("SELECT id,active FROM cards WHERE slug=?").get(String(b.slug || ""));
+      const c = db.prepare("SELECT id,active,user_id FROM cards WHERE slug=?").get(String(b.slug || ""));
       if (!c || !c.active) return json(res, 404, { error: "card not found" });
+      if (!planAtLeast(ownerPlanForCard(c), "pro")) return json(res, 403, { error: "lead capture is not enabled on this card" });
       const f = (v, n) => vv(v).slice(0, n);
       const name = f(b.name, 120), phone = f(b.phone, 40), email = f(b.email, 160), company = f(b.company, 120), note = f(b.note, 500);
       if (!name && !phone) return json(res, 400, { error: "enter a name or phone" });
@@ -471,7 +524,7 @@ const server = http.createServer(async (req, res) => {
       db.prepare("UPDATE cards SET scan_count=scan_count+1 WHERE id=?").run(c.id);
       db.prepare("INSERT INTO events(card_id,type) VALUES (?,'scan')").run(c.id);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      return res.end(profilePage(c, baseUrl(req)));
+      return res.end(profilePage(c, baseUrl(req), ownerPlanForCard(c)));
     }
 
     /* ---------- auth ---------- */
@@ -479,11 +532,27 @@ const server = http.createServer(async (req, res) => {
       const b = await jread(req);
       const u = db.prepare("SELECT * FROM users WHERE email=?").get(String(b.email || "").trim().toLowerCase());
       if (!u || !checkPassword(String(b.password || ""), u.pass_hash, u.salt)) return json(res, 401, { error: "wrong email or password" });
-      return json(res, 200, { token: signToken(u), email: u.email });
+      return json(res, 200, { token: signToken(u), email: u.email, role: u.role || "user", name: u.name || "" });
+    }
+
+    /* public self-registration */
+    if (req.method === "POST" && p === "/api/register") {
+      if (!rateLimit(req, "register", 5, 60 * 60 * 1000)) return json(res, 429, { error: "Too many sign-ups from this network, try later." });
+      const b = await jread(req);
+      const email = String(b.email || "").trim().toLowerCase();
+      const name = vv(b.name).slice(0, 80);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(res, 400, { error: "enter a valid email" });
+      if (String(b.password || "").length < 8) return json(res, 400, { error: "password must be 8+ characters" });
+      if (db.prepare("SELECT id FROM users WHERE email=?").get(email)) return json(res, 409, { error: "that email is already registered — sign in instead" });
+      const salt = crypto.randomBytes(16).toString("hex");
+      const r = db.prepare("INSERT INTO users(email,pass_hash,salt,role,name) VALUES (?,?,?,'user',?)").run(email, hashPassword(b.password, salt), salt, name);
+      const u = db.prepare("SELECT * FROM users WHERE id=?").get(r.lastInsertRowid);
+      return json(res, 200, { token: signToken(u), email: u.email, role: "user", name: u.name || "" });
     }
 
     const me = bearer(req);
-    if (req.method === "GET" && p === "/api/me") { if (!me) return json(res, 401, { error: "unauthorized" }); return json(res, 200, { email: me.email, app_url: baseUrl(req) }); }
+    const isAdmin = !!(me && me.role === "admin");
+    if (req.method === "GET" && p === "/api/me") { if (!me) return json(res, 401, { error: "unauthorized" }); return json(res, 200, { email: me.email, name: me.name || "", role: me.role || "user", plan: planOf(me), plan_expires: me.plan_expires || null, app_url: baseUrl(req) }); }
     if (req.method === "POST" && p === "/api/change-password") {
       if (!me) return json(res, 401, { error: "unauthorized" });
       const b = await jread(req); if (String(b.password || "").length < 6) return json(res, 400, { error: "password must be 6+ characters" });
@@ -497,18 +566,24 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && p === "/api/overview") {
       if (!needAuth()) return;
-      const total = db.prepare("SELECT COUNT(*) n FROM cards").get().n;
-      const active = db.prepare("SELECT COUNT(*) n FROM cards WHERE active=1").get().n;
-      const scans = db.prepare("SELECT COALESCE(SUM(scan_count),0) s FROM cards").get().s;
-      const downloads = db.prepare("SELECT COALESCE(SUM(vcard_downloads),0) s FROM cards").get().s;
-      const leads = db.prepare("SELECT COUNT(*) n FROM leads").get().n;
-      return json(res, 200, { total, active, scans, downloads, leads, app_url: baseUrl(req) });
+      const W = isAdmin ? "" : " WHERE user_id=" + Number(me.id);
+      const total = db.prepare("SELECT COUNT(*) n FROM cards" + W).get().n;
+      const active = db.prepare("SELECT COUNT(*) n FROM cards" + (W ? W + " AND" : " WHERE") + " active=1").get().n;
+      const scans = db.prepare("SELECT COALESCE(SUM(scan_count),0) s FROM cards" + W).get().s;
+      const downloads = db.prepare("SELECT COALESCE(SUM(vcard_downloads),0) s FROM cards" + W).get().s;
+      const leads = isAdmin
+        ? db.prepare("SELECT COUNT(*) n FROM leads").get().n
+        : db.prepare("SELECT COUNT(*) n FROM leads l JOIN cards c ON c.id=l.card_id WHERE c.user_id=?").get(me.id).n;
+      return json(res, 200, { total, active, scans, downloads, leads, role: me.role || "user", app_url: baseUrl(req) });
     }
 
     if (p === "/api/cards") {
       if (!needAuth()) return;
       if (req.method === "GET") {
-        const cards = db.prepare("SELECT id,slug,first_name,last_name,job_title,company,template,active,scan_count,vcard_downloads,updated_at FROM cards ORDER BY updated_at DESC").all();
+        const cards = isAdmin
+          ? db.prepare(`SELECT c.id,c.slug,c.first_name,c.last_name,c.job_title,c.company,c.template,c.active,c.scan_count,c.vcard_downloads,c.updated_at,u.email owner
+              FROM cards c LEFT JOIN users u ON u.id=c.user_id ORDER BY c.updated_at DESC`).all()
+          : db.prepare("SELECT id,slug,first_name,last_name,job_title,company,template,active,scan_count,vcard_downloads,updated_at FROM cards WHERE user_id=? ORDER BY updated_at DESC").all(me.id);
         return json(res, 200, { cards, app_url: baseUrl(req) });
       }
       if (req.method === "POST") {
@@ -516,26 +591,50 @@ const server = http.createServer(async (req, res) => {
         if (!b.first_name && !b.last_name) return json(res, 400, { error: "a name is required" });
         let slug = String(b.slug || "").trim().toLowerCase();
         if (slug) {
+          if (!isAdmin && !planAtLeast(planOf(me), "pro")) return json(res, 403, { error: "Custom links are a Pro feature. Upgrade to choose your own link.", upgrade: true });
           if (!SLUG_RE.test(slug)) return json(res, 400, { error: "link can use 3-40 lowercase letters, numbers and dashes" });
           if (slugTaken(slug)) return json(res, 409, { error: "that link is already taken" });
         } else slug = slugify(b.first_name, b.last_name);
+        /* who owns this card */
+        let ownerId = me.id;
+        if (isAdmin && b.owner_email) {
+          const ou = db.prepare("SELECT id FROM users WHERE email=?").get(String(b.owner_email).trim().toLowerCase());
+          if (!ou) return json(res, 404, { error: "no user with that email — ask them to register first" });
+          ownerId = ou.id;
+        }
+        if (!isAdmin) {
+          const myPlan = planOf(me), lim = PLANS[myPlan].cards;
+          const n = db.prepare("SELECT COUNT(*) n FROM cards WHERE user_id=?").get(me.id).n;
+          if (n >= lim) return json(res, 403, { error: `Your ${PLANS[myPlan].label} plan allows ${lim} card${lim > 1 ? "s" : ""}. Upgrade to add more.`, upgrade: true });
+        }
         const cols = CARD_FIELDS.filter((f) => b[f] !== undefined);
-        const sql = `INSERT INTO cards(slug,${cols.join(",")}) VALUES (?${",?".repeat(cols.length)})`;
-        db.prepare(sql).run(slug, ...cols.map((f) => b[f] ?? null));
+        const sql = `INSERT INTO cards(slug,user_id,${cols.join(",")}) VALUES (?,?${",?".repeat(cols.length)})`;
+        db.prepare(sql).run(slug, ownerId, ...cols.map((f) => b[f] ?? null));
         const c = db.prepare("SELECT * FROM cards WHERE slug=?").get(slug);
         return json(res, 200, { ok: true, id: c.id, slug, url: baseUrl(req) + "/c/" + slug });
       }
     }
 
+    /* ownership: users may only touch their own cards; admin touches all */
+    const ownCard = (id) => {
+      const c = db.prepare("SELECT * FROM cards WHERE id=?").get(id);
+      if (!c) return null;
+      if (!isAdmin && c.user_id !== me.id) return null;
+      return c;
+    };
+
     const mCard = p.match(/^\/api\/cards\/(\d+)$/);
     if (mCard) {
       if (!needAuth()) return;
       const id = Number(mCard[1]);
-      if (req.method === "GET") { const c = db.prepare("SELECT * FROM cards WHERE id=?").get(id); return c ? json(res, 200, { card: c, url: baseUrl(req) + "/c/" + c.slug }) : json(res, 404, { error: "not found" }); }
+      if (req.method === "GET") { const c = ownCard(id); return c ? json(res, 200, { card: c, url: baseUrl(req) + "/c/" + c.slug }) : json(res, 404, { error: "not found" }); }
       if (req.method === "PUT") {
+        if (!ownCard(id)) return json(res, 404, { error: "not found" });
         const b = await jread(req);
         const newSlug = String(b.slug || "").trim().toLowerCase();
-        if (newSlug) {
+        const curSlug = db.prepare("SELECT slug FROM cards WHERE id=?").get(id).slug;
+        if (newSlug && newSlug !== curSlug) {
+          if (!isAdmin && !planAtLeast(planOf(me), "pro")) return json(res, 403, { error: "Custom links are a Pro feature. Upgrade to choose your own link.", upgrade: true });
           if (!SLUG_RE.test(newSlug)) return json(res, 400, { error: "link can use 3-40 lowercase letters, numbers and dashes" });
           if (slugTaken(newSlug, id)) return json(res, 409, { error: "that link is already taken" });
           db.prepare("UPDATE cards SET slug=? WHERE id=?").run(newSlug, id);
@@ -544,20 +643,103 @@ const server = http.createServer(async (req, res) => {
         if (cols.length) db.prepare(`UPDATE cards SET ${cols.map((f) => f + "=?").join(",")}, updated_at=datetime('now') WHERE id=?`).run(...cols.map((f) => b[f] ?? null), id);
         return json(res, 200, { ok: true });
       }
-      if (req.method === "DELETE") { db.prepare("DELETE FROM cards WHERE id=?").run(id); db.prepare("DELETE FROM events WHERE card_id=?").run(id); return json(res, 200, { ok: true }); }
+      if (req.method === "DELETE") { if (!ownCard(id)) return json(res, 404, { error: "not found" }); db.prepare("DELETE FROM cards WHERE id=?").run(id); db.prepare("DELETE FROM events WHERE card_id=?").run(id); db.prepare("DELETE FROM leads WHERE card_id=?").run(id); return json(res, 200, { ok: true }); }
+    }
+
+    /* billing */
+    if (req.method === "GET" && p === "/api/billing/plans") {
+      if (!needAuth()) return;
+      return json(res, 200, {
+        plans: Object.fromEntries(Object.entries(PLANS).map(([k, v]) => [k, { label: v.label, cards: v.cards, price: v.price }])),
+        period_days: BILLING_PERIOD_DAYS,
+        current: planOf(me), expires: me.plan_expires || null,
+        paystack: !!PAYSTACK_SECRET_KEY, manual_url: PAYSTACK_UPGRADE_URL || null,
+      });
+    }
+    if (req.method === "POST" && p === "/api/billing/init") {
+      if (!needAuth()) return;
+      const b = await jread(req);
+      const plan = String(b.plan || "");
+      if (!PLANS[plan] || plan === "free") return json(res, 400, { error: "unknown plan" });
+      if (!PAYSTACK_SECRET_KEY) {
+        return json(res, 200, { manual: true, url: PAYSTACK_UPGRADE_URL || null,
+          note: "Online billing is not configured. Pay via the payment page (or contact the admin) and your account will be upgraded manually." });
+      }
+      try {
+        const r = await fetch("https://api.paystack.co/transaction/initialize", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + PAYSTACK_SECRET_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: me.email,
+            amount: Math.round(PLANS[plan].price * 100), /* pesewas */
+            currency: "GHS",
+            metadata: { uid: me.id, plan },
+            callback_url: baseUrl(req) + "/app",
+          }),
+        });
+        const d = await r.json();
+        if (!d.status || !d.data?.authorization_url) return json(res, 502, { error: d.message || "could not start payment" });
+        return json(res, 200, { url: d.data.authorization_url });
+      } catch { return json(res, 502, { error: "payment service unreachable, try again shortly" }); }
+    }
+
+    /* admin: user management */
+    if (req.method === "GET" && p === "/api/admin/users") {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      const users = db.prepare(`SELECT u.id,u.email,u.name,u.role,u.plan,u.plan_expires,u.created_at,
+          (SELECT COUNT(*) FROM cards c WHERE c.user_id=u.id) cards
+        FROM users u ORDER BY u.created_at DESC LIMIT 1000`).all();
+      return json(res, 200, { users: users.map((u) => ({ ...u, effective: planOf(u) })) });
+    }
+    const mUserDel = p.match(/^\/api\/admin\/users\/(\d+)$/);
+    if (req.method === "DELETE" && mUserDel) {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      const uid = Number(mUserDel[1]);
+      const u = db.prepare("SELECT * FROM users WHERE id=?").get(uid);
+      if (!u) return json(res, 404, { error: "not found" });
+      if (u.role === "admin") return json(res, 403, { error: "admin accounts cannot be deleted" });
+      for (const c of db.prepare("SELECT id FROM cards WHERE user_id=?").all(uid)) {
+        db.prepare("DELETE FROM events WHERE card_id=?").run(c.id);
+        db.prepare("DELETE FROM leads WHERE card_id=?").run(c.id);
+      }
+      db.prepare("DELETE FROM cards WHERE user_id=?").run(uid);
+      db.prepare("DELETE FROM users WHERE id=?").run(uid);
+      return json(res, 200, { ok: true });
+    }
+
+    const mUserPlan = p.match(/^\/api\/admin\/users\/(\d+)\/plan$/);
+    if (req.method === "PUT" && mUserPlan) {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      const b = await jread(req);
+      const plan = String(b.plan || "");
+      if (!PLANS[plan]) return json(res, 400, { error: "unknown plan" });
+      const expires = plan === "free" ? null : new Date(Date.now() + BILLING_PERIOD_DAYS * 86400000).toISOString();
+      db.prepare("UPDATE users SET plan=?, plan_expires=? WHERE id=?").run(plan, expires, Number(mUserPlan[1]));
+      return json(res, 200, { ok: true, plan, expires });
     }
 
     /* leads inbox */
     if (req.method === "GET" && p === "/api/leads") {
       if (!needAuth()) return;
-      const leads = db.prepare(`SELECT l.*, c.first_name cf, c.last_name cl, c.slug cslug
-        FROM leads l LEFT JOIN cards c ON c.id=l.card_id ORDER BY l.at DESC LIMIT 500`).all();
+      const leads = isAdmin
+        ? db.prepare(`SELECT l.*, c.first_name cf, c.last_name cl, c.slug cslug
+            FROM leads l LEFT JOIN cards c ON c.id=l.card_id ORDER BY l.at DESC LIMIT 500`).all()
+        : db.prepare(`SELECT l.*, c.first_name cf, c.last_name cl, c.slug cslug
+            FROM leads l JOIN cards c ON c.id=l.card_id WHERE c.user_id=? ORDER BY l.at DESC LIMIT 500`).all(me.id);
       return json(res, 200, { leads });
     }
     const mLead = p.match(/^\/api\/leads\/(\d+)$/);
     if (req.method === "DELETE" && mLead) {
       if (!needAuth()) return;
-      db.prepare("DELETE FROM leads WHERE id=?").run(Number(mLead[1]));
+      const lid = Number(mLead[1]);
+      if (!isAdmin) {
+        const owns = db.prepare("SELECT l.id FROM leads l JOIN cards c ON c.id=l.card_id WHERE l.id=? AND c.user_id=?").get(lid, me.id);
+        if (!owns) return json(res, 404, { error: "not found" });
+      }
+      db.prepare("DELETE FROM leads WHERE id=?").run(lid);
       return json(res, 200, { ok: true });
     }
 
@@ -566,8 +748,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && mStats) {
       if (!needAuth()) return;
       const id = Number(mStats[1]);
-      const c = db.prepare("SELECT * FROM cards WHERE id=?").get(id);
+      const c = ownCard(id);
       if (!c) return json(res, 404, { error: "not found" });
+      if (!isAdmin && !planAtLeast(planOf(me), "pro")) return json(res, 403, { error: "Analytics is a Pro feature. Upgrade to see your 30-day chart and link taps.", upgrade: true });
       const leads = db.prepare("SELECT COUNT(*) n FROM leads WHERE card_id=?").get(id).n;
       const clicks = {};
       for (const r of db.prepare("SELECT type, COUNT(*) n FROM events WHERE card_id=? AND type LIKE 'click:%' GROUP BY type").all(id))
@@ -584,12 +767,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && mToggle) {
       if (!needAuth()) return;
       db.prepare("UPDATE cards SET active = 1 - active, updated_at=datetime('now') WHERE id=?").run(Number(mToggle[1]));
-      const c = db.prepare("SELECT active FROM cards WHERE id=?").get(Number(mToggle[1]));
+      const c = ownCard(Number(mToggle[1]));
       return json(res, 200, { ok: true, active: !!c?.active });
     }
 
     if (req.method === "POST" && p === "/api/cards/bulk") {
       if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "bulk import is admin-only" });
       const b = await jread(req);
       const rows = Array.isArray(b.rows) ? b.rows : [];
       let made = 0;
@@ -598,14 +782,14 @@ const server = http.createServer(async (req, res) => {
         let first = r.first_name, last = r.last_name;
         if (!first && r.name) { const parts = String(r.name).trim().split(/\s+/); first = parts.shift(); last = parts.join(" "); }
         const slug = slugify(first, last);
-        db.prepare("INSERT INTO cards(slug,first_name,last_name,job_title,company,mobile,email,template) VALUES (?,?,?,?,?,?,?,?)")
+        db.prepare("INSERT INTO cards(slug,user_id,first_name,last_name,job_title,company,mobile,email,template) VALUES (?," + Number(me.id) + ",?,?,?,?,?,?,?)")
           .run(slug, first || "", last || "", r.position || r.job_title || "", r.company || "", r.phone || r.mobile || "", r.email || "", b.template || "corporate");
         made++;
       }
       return json(res, 200, { ok: true, created: made });
     }
 
-    if (req.method === "GET") return serveStatic(res, p);
+    if (req.method === "GET" || req.method === "HEAD") return serveStatic(req, res, p);
     return json(res, 404, { error: "not found" });
   } catch (e) { console.error("ERR", p, e); return json(res, 500, { error: e.message || "server error" }); }
 });
