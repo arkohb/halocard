@@ -160,7 +160,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) =
 const MAX_BODY = 3 * 1024 * 1024; // 3 MB (cards may carry small embedded images)
 const CSP = [
   "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'self'", "form-action 'self'",
-  "img-src 'self' data: https:",
+  "img-src 'self' data: blob: https:",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
@@ -277,8 +277,32 @@ function vcard(c, base) {
     ["Instagram", "instagram", c.instagram], ["TikTok", "tiktok", c.tiktok], ["Snapchat", "snapchat", c.snapchat],
   ]) if (v) L.push(`X-SOCIALPROFILE;TYPE=${lbl}:${socialUrl(kind, v)}`);
   L.push(`SOURCE:${base}/c/${c.slug}`);
+  const ph = /^data:image\/(jpe?g|png);base64,([A-Za-z0-9+/=]+)$/i.exec(c.photo || "");
+  if (ph && ph[2].length < 400000) {
+    /* vCard 3.0 inline photo, folded to 75-char lines as the spec requires */
+    const line = `PHOTO;ENCODING=b;TYPE=${/png/i.test(ph[1]) ? "PNG" : "JPEG"}:` + ph[2];
+    L.push(line.match(/.{1,74}/g).join("\r\n "));
+  }
   L.push("END:VCARD");
   return L.join("\r\n");
+}
+
+/* Android "insert contact" intent: opens the Contacts app's new-contact screen with the details filled in.
+   If no app handles it, Chrome follows browser_fallback_url (the vCard). */
+function androidContactIntent(c, base) {
+  const x = [];
+  const add = (k, v) => { v = vv(v); if (v) x.push(`S.${k}=${encodeURIComponent(v)}`); };
+  add("name", fullName(c));
+  add("company", c.company);
+  add("job_title", c.job_title);
+  add("phone", c.mobile || c.whatsapp);
+  if (c.mobile || c.whatsapp) x.push("i.phone_type=2"); /* mobile */
+  if (c.secondary) { add("secondary_phone", c.secondary); x.push("i.secondary_phone_type=3"); /* work */ }
+  add("email", c.email);
+  add("postal", [c.address, c.city, c.country].filter(Boolean).join(", "));
+  add("notes", [c.website ? socialUrl("website", c.website) : "", `${base}/c/${c.slug}`].filter(Boolean).join("\n"));
+  x.push(`S.browser_fallback_url=${encodeURIComponent(`${base}/c/${c.slug}/vcard.vcf`)}`);
+  return `intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/contact;${x.join(";")};end`;
 }
 
 /* ---------- kente weave: brand thread used on the profile page ---------- */
@@ -442,7 +466,7 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
       ${title ? `<div class="ptitle">${title}</div>` : ""}
       ${company ? `<div class="pcompany">${company}</div>` : ""}
     </div>
-    <a class="save" href="/c/${esc(c.slug)}/vcard.vcf">${ICONS.save} Save to Contacts</a>
+    <a class="save" id="saveBtn" href="/c/${esc(c.slug)}/vcard.vcf" data-intent="${esc(androidContactIntent(c, base))}">${ICONS.save} Save to Contacts</a>
     ${PRO && c.payment_url && cleanPayUrl(c.payment_url) ? `<a class="save pay" href="/c/${esc(c.slug)}/go/pay" target="_blank" rel="noopener">&#128179; ${esc(vv(c.payment_label) || "Pay Me")}</a>` : ""}
     ${actions.length ? `<div class="acts">${actions.join("")}</div>` : ""}
     ${chips.length ? `<div class="sect">Connect with me</div><div class="chips">${chipHtml}</div>` : ""}
@@ -460,6 +484,22 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
   </div></div>
   <div style="padding:16px 26px 0">${kenteBand("bot").replace('class="kente-band"','class="kente-band slim"')}</div>
 </div>
+<script>
+/* Save to Contacts, as seamless as each phone allows:
+   Android -> opens the phone's own "Create contact" screen pre-filled (falls back to the vCard)
+   iPhone  -> the vCard is served inline, so iOS shows the contact card with "Create New Contact"
+   desktop -> downloads the .vcf */
+(function(){
+  var s=document.getElementById('saveBtn'); if(!s) return;
+  s.addEventListener('click',function(e){
+    if(/Android/i.test(navigator.userAgent) && s.dataset.intent){
+      e.preventDefault();
+      try{ navigator.sendBeacon('/api/public/saved', new Blob([JSON.stringify({slug:${JSON.stringify(c.slug)}})],{type:'application/json'})); }catch(_){}
+      location.href = s.dataset.intent;
+    }
+  });
+})();
+</script>
 ${PRO ? `<script>
 (function(){
   var b=document.getElementById('lbtn'),m=document.getElementById('lmsg');
@@ -519,7 +559,7 @@ const server = http.createServer(async (req, res) => {
       if (!c || !c.active) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("Not found"); }
       db.prepare("UPDATE cards SET vcard_downloads=vcard_downloads+1 WHERE id=?").run(c.id);
       db.prepare("INSERT INTO events(card_id,type) VALUES (?,'vcard')").run(c.id);
-      res.writeHead(200, { "Content-Type": "text/vcard; charset=utf-8", "Content-Disposition": `attachment; filename="${(fullName(c) || "contact").replace(/[^\w]+/g, "_")}.vcf"` });
+      res.writeHead(200, { "Content-Type": "text/vcard; charset=utf-8", "Cache-Control": "no-store", "Content-Disposition": `inline; filename="${(fullName(c) || "contact").replace(/[^\w]+/g, "_")}.vcf"` });
       return res.end(vcard(c, baseUrl(req)));
     }
     /* tracked click-through: /c/<slug>/go/<kind> -> logs the tap, then redirects */
@@ -567,6 +607,17 @@ const server = http.createServer(async (req, res) => {
         if (!r.ok) console.warn(`billing: webhook ${ev.data && ev.data.reference} ignored — ${r.reason}`);
       }
       res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"ok":true}');
+    }
+
+    /* public: a contact was saved via the phone's own "new contact" screen (Android) */
+    if (req.method === "POST" && p === "/api/public/saved") {
+      if (!rateLimit(req, "saved", 30, 10 * 60 * 1000)) return json(res, 429, { error: "slow down" });
+      const b = await jread(req);
+      const c = db.prepare("SELECT id,active FROM cards WHERE slug=?").get(String(b.slug || ""));
+      if (!c || !c.active) return json(res, 404, { error: "card not found" });
+      db.prepare("UPDATE cards SET vcard_downloads=vcard_downloads+1 WHERE id=?").run(c.id);
+      db.prepare("INSERT INTO events(card_id,type) VALUES (?,'vcard')").run(c.id);
+      return json(res, 200, { ok: true });
     }
 
     /* public: visitor shares their details back (lead capture) */
