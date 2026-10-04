@@ -492,14 +492,22 @@ async function sigCard(id){
 
 /* ============ exports ============ */
 function currentSVGString(){return cardSVG(SIDE);}
-function svgToImage(svgStr){return new Promise((res,rej)=>{const img=new Image();const blob=new Blob([svgStr],{type:'image/svg+xml;charset=utf-8'});const u=URL.createObjectURL(blob);img.onload=()=>{URL.revokeObjectURL(u);res(img);};img.onerror=rej;img.src=u;});}
-function dl(href,name){const a=document.createElement('a');a.href=href;a.download=name;document.body.appendChild(a);a.click();a.remove();}
+/* render the card SVG to an <img> via a data: URL (blob: images are blocked by the site's CSP) */
+function svgToImage(svgStr){return new Promise((res,rej)=>{const img=new Image();img.decoding='sync';
+  img.onload=()=>res(img);img.onerror=()=>rej(new Error('could not render the card image'));
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr);});}
+function dl(href,name){const a=document.createElement('a');a.href=href;a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
+  if(String(href).startsWith('blob:'))setTimeout(()=>URL.revokeObjectURL(href),4000);}
+const canvasBlob=(cv,type='image/png')=>new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('export too large for this device')),type));
 const fileBase=()=>([document.getElementById('f_first').value,document.getElementById('f_last').value].filter(Boolean).join('-')||'halocard')+'-'+SIDE;
 function exportSVG(){const b=new Blob([currentSVGString()],{type:'image/svg+xml'});dl(URL.createObjectURL(b),fileBase()+'.svg');}
 async function renderCanvas(scale){const img=await svgToImage(currentSVGString());const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
-async function exportPNG(){try{const cv=await renderCanvas(4);/* 4016x2600 — 4K, ~1200 DPI at 85mm */dl(cv.toDataURL('image/png'),fileBase()+'.png');}catch(e){toast('Export failed');}}
+async function exportPNG(){toast('Preparing PNG…');
+  for(const scale of [4,2]){ /* 4 = 4016x2600 (4K); falls back to 2x on phones with small canvas limits */
+    try{const cv=await renderCanvas(scale);const b=await canvasBlob(cv);dl(URL.createObjectURL(b),fileBase()+'.png');toast('PNG downloaded');return;}
+    catch(e){if(scale===2){console.error(e);toast('PNG export failed: '+e.message);}}}}
 async function exportPDF(){
-  try{
+  try{toast('Preparing print PDF…');
     let sel=document.getElementById('exSize').value, mmW,mmH;
     if(sel==='custom'){mmW=+document.getElementById('exW').value||85;mmH=+document.getElementById('exH').value||55;}
     else{[mmW,mmH]=sel.split(',').map(Number);}
@@ -513,18 +521,18 @@ async function exportPDF(){
     const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);
     const s=Math.max(cv.width/W,cv.height/H), dw=W*s, dh=H*s;
     g.drawImage(img,(cv.width-dw)/2,(cv.height-dh)/2,dw,dh);
-    const png=cv.toDataURL('image/png');
+    const png=cv.toDataURL('image/jpeg',0.95); /* JPEG keeps the PDF small; 610 DPI is still print grade */
     const {jsPDF}=window.jspdf;
     const doc=new jsPDF({unit:'mm',format:[pageW,pageH],orientation:pageW>=pageH?'landscape':'portrait'});
-    doc.addImage(png,'PNG',0,0,pageW,pageH);
+    doc.addImage(png,'JPEG',0,0,pageW,pageH);
     // crop marks at the trim corners, drawn outward into the bleed
     doc.setDrawColor(255,255,255);doc.setLineWidth(0.6);const L=3;
     const marks=[[bleed,bleed,-1,-1],[pageW-bleed,bleed,1,-1],[bleed,pageH-bleed,-1,1],[pageW-bleed,pageH-bleed,1,1]];
     const drawMarks=()=>marks.forEach(([x,y,sx,sy])=>{doc.line(x,y,x+sx*L,y);doc.line(x,y,x,y+sy*L);});
     drawMarks(); // white underlay so marks stay visible on dark artwork
     doc.setDrawColor(0);doc.setLineWidth(0.2);drawMarks();
-    doc.save(fileBase()+'.pdf');
-  }catch(e){toast('PDF export failed');}
+    dl(URL.createObjectURL(doc.output('blob')),fileBase()+'.pdf');toast('PDF downloaded');
+  }catch(e){console.error(e);toast('PDF export failed: '+(e.message||e));}
 }
 
 /* ============ bulk CSV ============ */
