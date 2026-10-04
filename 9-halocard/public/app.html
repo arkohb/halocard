@@ -294,11 +294,14 @@ function qrSvg(text,x,y,box,dark){const m=qrModules(text);const n=m.length;const
   for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(m[r][c])path+=`M${(x+pad+c*cell).toFixed(2)} ${(y+pad+r*cell).toFixed(2)}h${cell.toFixed(2)}v${cell.toFixed(2)}h-${cell.toFixed(2)}z`;
   return s+`<path d="${path}" fill="${dark}"/>`;}
 const W=1004,H=650;
+/* the QR must hold a full https:// link so phone scanners offer "Open", not "Copy" */
+function siteBase(){let b=String(APP_URL||location.origin).trim().replace(/\/+$/,'');if(!/^https?:\/\//i.test(b))b='https://'+b;
+  if(/^http:\/\//i.test(b)&&!/^http:\/\/(localhost|127\.)/i.test(b))b='https://'+b.slice(7);return b;}
 function cardSVG(side){
-  const c=collect();const url=(APP_URL||location.origin)+'/c/'+(EDIT_ID?(CARD.slug||'preview'):'preview');
+  const c=collect();const url=siteBase()+'/c/'+(EDIT_ID?(CARD.slug||'preview'):'preview');
   document.getElementById('cardUrl').textContent=EDIT_ID?url:'(save to generate the live QR link)';
   const name=[c.first_name,c.middle_name,c.last_name].filter(Boolean).join(' ')||'Your Name';
-  const ctx={name,company:c.company,job:c.job_title,logo:CARD.logo,photo:CARD.photo,accent:CARD.accent,slogan:c.slogan,url:EDIT_ID?url:(APP_URL||location.origin)+'/c/preview'};
+  const ctx={name,company:c.company,job:c.job_title,logo:CARD.logo,photo:CARD.photo,accent:CARD.accent,slogan:c.slogan,url:EDIT_ID?url:siteBase()+'/c/preview'};
   const inner=(side==='back'?BACK:FRONT)[CARD.template]?.(ctx)||FRONT.corporate(ctx);
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif">${inner}</svg>`;
 }
@@ -367,7 +370,7 @@ async function saveCard(){
 
 /* ============ copy link + Web NFC ============ */
 function copyLink(){if(!CARD.slug){toast('Save the card first');return;}
-  const u=(APP_URL||location.origin)+'/c/'+CARD.slug;
+  const u=siteBase()+'/c/'+CARD.slug;
   (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast('Link copied'),
     ()=>{prompt('Copy your card link:',u);});}
 async function writeNfc(){
@@ -375,7 +378,7 @@ async function writeNfc(){
   if(!('NDEFReader' in window)){toast('NFC writing needs Chrome on Android');return;}
   try{toast('Hold a blank NFC card against the phone…');
     const n=new NDEFReader();
-    await n.write({records:[{recordType:'url',data:(APP_URL||location.origin)+'/c/'+CARD.slug}]});
+    await n.write({records:[{recordType:'url',data:siteBase()+'/c/'+CARD.slug}]});
     toast('✓ NFC card written — tap it on any phone to test');}
   catch(e){toast('NFC write failed: '+(e.message||e));}}
 
@@ -500,13 +503,17 @@ function dl(href,name){const a=document.createElement('a');a.href=href;a.downloa
   if(String(href).startsWith('blob:'))setTimeout(()=>URL.revokeObjectURL(href),4000);}
 const canvasBlob=(cv,type='image/png')=>new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('export too large for this device')),type));
 const fileBase=()=>([document.getElementById('f_first').value,document.getElementById('f_last').value].filter(Boolean).join('-')||'halocard')+'-'+SIDE;
-function exportSVG(){const b=new Blob([currentSVGString()],{type:'image/svg+xml'});dl(URL.createObjectURL(b),fileBase()+'.svg');}
+/* a card must be saved before export, otherwise its QR points at /c/preview */
+async function ensureSaved(){if(EDIT_ID&&CARD.slug)return true;toast('Saving your card first so the QR opens your live card…');
+  await saveCard();if(EDIT_ID&&CARD.slug)return true;toast('Save the card first — then export.');return false;}
+async function exportSVG(){if(!await ensureSaved())return;const b=new Blob([currentSVGString()],{type:'image/svg+xml'});dl(URL.createObjectURL(b),fileBase()+'.svg');}
 async function renderCanvas(scale){const img=await svgToImage(currentSVGString());const cv=document.createElement('canvas');cv.width=W*scale;cv.height=H*scale;const g=cv.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,cv.width,cv.height);g.drawImage(img,0,0,cv.width,cv.height);return cv;}
-async function exportPNG(){toast('Preparing PNG…');
+async function exportPNG(){if(!await ensureSaved())return;toast('Preparing PNG…');
   for(const scale of [4,2]){ /* 4 = 4016x2600 (4K); falls back to 2x on phones with small canvas limits */
     try{const cv=await renderCanvas(scale);const b=await canvasBlob(cv);dl(URL.createObjectURL(b),fileBase()+'.png');toast('PNG downloaded');return;}
     catch(e){if(scale===2){console.error(e);toast('PNG export failed: '+e.message);}}}}
 async function exportPDF(){
+  if(!await ensureSaved())return;
   try{toast('Preparing print PDF…');
     let sel=document.getElementById('exSize').value, mmW,mmH;
     if(sel==='custom'){mmW=+document.getElementById('exW').value||85;mmH=+document.getElementById('exH').value||55;}
