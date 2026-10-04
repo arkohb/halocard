@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS cards(
 CREATE TABLE IF NOT EXISTS events(
   id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER, type TEXT,
   at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS payments(
+  reference TEXT PRIMARY KEY, user_id INTEGER, plan TEXT, amount INTEGER, currency TEXT,
+  source TEXT, at TEXT DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS leads(
   id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER NOT NULL,
   name TEXT, phone TEXT, email TEXT, company TEXT, note TEXT,
@@ -76,6 +79,67 @@ function planOf(u) {
   return p;
 }
 const planAtLeast = (p, min) => ({ free: 0, pro: 1, business: 2 }[p] >= { free: 0, pro: 1, business: 2 }[min]);
+const PLAN_RANK = { free: 0, pro: 1, business: 2 };
+/* Apply a Paystack transaction exactly once. Used by BOTH the webhook and the
+   return-from-checkout verify call, so a missing/misrouted webhook can't strand a payer. */
+function applyPayment(tx, source) {
+  if (!tx || tx.status !== "success") return { ok: false, reason: "payment not successful" };
+  const ref = String(tx.reference || "");
+  const md = tx.metadata || {};
+  const uid = Number(md.uid), plan = String(md.plan || "");
+  if (!ref || !uid || !PLANS[plan] || plan === "free") return { ok: false, reason: "not a HaloCard plan payment" };
+  if (String(tx.currency || "").toUpperCase() !== "GHS") return { ok: false, reason: "wrong currency" };
+  const need = Math.round(PLANS[plan].price * 100);
+  if (!(Number(tx.amount) >= need)) {
+    console.warn(`billing: REJECTED ${ref} — paid ${tx.amount} pesewas, ${plan} costs ${need}`);
+    return { ok: false, reason: "amount paid is less than the plan price" };
+  }
+  const u = db.prepare("SELECT * FROM users WHERE id=?").get(uid);
+  if (!u) return { ok: false, reason: "user not found" };
+  if (db.prepare("SELECT 1 FROM payments WHERE reference=?").get(ref)) return { ok: true, already: true, plan: planOf(u), expires: u.plan_expires };
+  const cur = planOf(u);
+  const curExp = u.plan_expires ? Date.parse(u.plan_expires) : 0;
+  const period = BILLING_PERIOD_DAYS * 86400000;
+  let newPlan = plan, expires;
+  if (PLAN_RANK[cur] > PLAN_RANK[plan] && (u.role === "admin" || curExp > Date.now())) {
+    newPlan = u.plan; expires = u.plan_expires;                      /* paid for a lower plan while on a higher one: never downgrade */
+    console.warn(`billing: user ${uid} on ${cur} paid for ${plan} (${ref}) — plan left unchanged, consider a refund`);
+  } else {
+    const from = (cur === plan && curExp > Date.now()) ? curExp : Date.now(); /* early renewal keeps the remaining days */
+    expires = new Date(Math.max(from + period, curExp || 0)).toISOString(); /* upgrading never shortens time already paid for */
+  }
+  db.exec("BEGIN");
+  try {
+    db.prepare("INSERT INTO payments(reference,user_id,plan,amount,currency,source) VALUES (?,?,?,?,?,?)").run(ref, uid, plan, Number(tx.amount), "GHS", source);
+    db.prepare("UPDATE users SET plan=?, plan_expires=? WHERE id=?").run(newPlan, expires, uid);
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); if (/UNIQUE|PRIMARY/i.test(String(e))) return { ok: true, already: true }; throw e; }
+  console.log(`billing: user ${uid} paid ${plan} (${ref}, via ${source}) -> ${newPlan} until ${expires}`);
+  return { ok: true, plan: newPlan, expires };
+}
+async function paystackVerify(reference) {
+  const r = await fetch("https://api.paystack.co/transaction/verify/" + encodeURIComponent(reference), {
+    headers: { Authorization: "Bearer " + PAYSTACK_SECRET_KEY },
+  });
+  const d = await r.json();
+  if (!d.status || !d.data) throw new Error(d.message || "could not verify payment");
+  return d.data;
+}
+/* Pay Me links: https only, and only real payment providers (stops "Pay Me" phishing links) */
+const PAY_HOSTS = (process.env.PAY_LINK_HOSTS ||
+  "paystack.com,paystack.shop,flutterwave.com,flw.me,hubtel.com,mtn.com.gh,momo.mtn.com,expresspaygh.com,theteller.net,paypal.com,paypal.me,selar.co,selar.com")
+  .split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+function cleanPayUrl(v) {
+  v = vv(v).replace(/\s+/g, "");
+  if (!v) return "";
+  if (/^http:\/\//i.test(v)) v = "https://" + v.slice(7);
+  if (!/^https:\/\//i.test(v)) v = "https://" + v;
+  let u; try { u = new URL(v); } catch { return null; }
+  const host = u.hostname.toLowerCase();
+  if (u.protocol !== "https:" || !PAY_HOSTS.some((h) => host === h || host.endsWith("." + h))) return null;
+  return u.toString();
+}
+const PAY_URL_ERROR = "Payment link must be a Paystack, Flutterwave, Hubtel, MTN MoMo, ExpressPay, Theteller, PayPal or Selar link (e.g. https://paystack.shop/pay/yourpage).";
 function ownerPlanForCard(c) { const u = c.user_id ? db.prepare("SELECT * FROM users WHERE id=?").get(c.user_id) : null; return planOf(u); }
 
 /* seed the single admin */
@@ -155,6 +219,14 @@ function readBody(req) {
     req.on("data", (c) => { if (done) return; len += c.length; if (len > MAX_BODY) { done = true; try { req.destroy(); } catch {} return resolve(""); } d += c; });
     req.on("end", () => { if (!done) resolve(d); });
     req.on("error", () => { if (!done) { done = true; resolve(""); } });
+  });
+}
+function readRaw(req) {
+  return new Promise((resolve) => {
+    const parts = []; let len = 0, done = false;
+    req.on("data", (c) => { if (done) return; len += c.length; if (len > MAX_BODY) { done = true; try { req.destroy(); } catch {} return resolve(Buffer.alloc(0)); } parts.push(c); });
+    req.on("end", () => { if (!done) resolve(Buffer.concat(parts)); });
+    req.on("error", () => { if (!done) { done = true; resolve(Buffer.alloc(0)); } });
   });
 }
 const jread = async (req) => { try { return JSON.parse((await readBody(req)) || "{}"); } catch { return {}; } };
@@ -371,7 +443,7 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
       ${company ? `<div class="pcompany">${company}</div>` : ""}
     </div>
     <a class="save" href="/c/${esc(c.slug)}/vcard.vcf">${ICONS.save} Save to Contacts</a>
-    ${PRO && c.payment_url ? `<a class="save pay" href="/c/${esc(c.slug)}/go/pay" target="_blank" rel="noopener">&#128179; ${esc(vv(c.payment_label) || "Pay Me")}</a>` : ""}
+    ${PRO && c.payment_url && cleanPayUrl(c.payment_url) ? `<a class="save pay" href="/c/${esc(c.slug)}/go/pay" target="_blank" rel="noopener">&#128179; ${esc(vv(c.payment_label) || "Pay Me")}</a>` : ""}
     ${actions.length ? `<div class="acts">${actions.join("")}</div>` : ""}
     ${chips.length ? `<div class="sect">Connect with me</div><div class="chips">${chipHtml}</div>` : ""}
     ${rows.length ? `<div class="sect">Contact details</div><div class="rows">${rows.join("")}</div>` : ""}
@@ -465,7 +537,7 @@ const server = http.createServer(async (req, res) => {
         linkedin: c.linkedin ? socialUrl("linkedin", c.linkedin) : "",
         x_twitter: c.x_twitter ? socialUrl("x_twitter", c.x_twitter) : "",
         website: c.website ? socialUrl("website", c.website) : "",
-        pay: c.payment_url && planAtLeast(ownerPlanForCard(c), "pro") ? socialUrl("website", c.payment_url) : "",
+        pay: c.payment_url && planAtLeast(ownerPlanForCard(c), "pro") ? (cleanPayUrl(c.payment_url) || "") : "",
       };
       const target = targets[kind];
       if (!target || !/^https:\/\//i.test(target)) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("Not found"); }
@@ -483,21 +555,16 @@ const server = http.createServer(async (req, res) => {
       return res.end(Buffer.from(mm[2], "base64"));
     }
 
-    /* Paystack webhook: auto-upgrade on successful payment */
+    /* Paystack webhook: auto-upgrade on successful payment (signature over the exact raw bytes) */
     if (req.method === "POST" && p === "/api/paystack/webhook") {
       if (!PAYSTACK_SECRET_KEY) { res.writeHead(404); return res.end(); }
-      const raw = await readBody(req);
+      const raw = await readRaw(req);
       const sig = crypto.createHmac("sha512", PAYSTACK_SECRET_KEY).update(raw).digest("hex");
       if (!safeEqual(sig, String(req.headers["x-paystack-signature"] || ""))) { res.writeHead(401); return res.end(); }
-      let ev; try { ev = JSON.parse(raw); } catch { res.writeHead(400); return res.end(); }
+      let ev; try { ev = JSON.parse(raw.toString("utf8")); } catch { res.writeHead(400); return res.end(); }
       if (ev.event === "charge.success") {
-        const md = (ev.data && ev.data.metadata) || {};
-        const uid = Number(md.uid), plan = String(md.plan || "");
-        if (uid && PLANS[plan] && plan !== "free") {
-          const expires = new Date(Date.now() + BILLING_PERIOD_DAYS * 86400000).toISOString();
-          db.prepare("UPDATE users SET plan=?, plan_expires=? WHERE id=?").run(plan, expires, uid);
-          console.log(`billing: user ${uid} upgraded to ${plan} until ${expires}`);
-        }
+        const r = applyPayment(ev.data, "webhook");
+        if (!r.ok) console.warn(`billing: webhook ${ev.data && ev.data.reference} ignored — ${r.reason}`);
       }
       res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"ok":true}');
     }
@@ -607,6 +674,7 @@ const server = http.createServer(async (req, res) => {
           const n = db.prepare("SELECT COUNT(*) n FROM cards WHERE user_id=?").get(me.id).n;
           if (n >= lim) return json(res, 403, { error: `Your ${PLANS[myPlan].label} plan allows ${lim} card${lim > 1 ? "s" : ""}. Upgrade to add more.`, upgrade: true });
         }
+        if (b.payment_url) { const pu = cleanPayUrl(b.payment_url); if (pu === null) return json(res, 400, { error: PAY_URL_ERROR }); b.payment_url = pu; }
         const cols = CARD_FIELDS.filter((f) => b[f] !== undefined);
         const sql = `INSERT INTO cards(slug,user_id,${cols.join(",")}) VALUES (?,?${",?".repeat(cols.length)})`;
         db.prepare(sql).run(slug, ownerId, ...cols.map((f) => b[f] ?? null));
@@ -639,6 +707,7 @@ const server = http.createServer(async (req, res) => {
           if (slugTaken(newSlug, id)) return json(res, 409, { error: "that link is already taken" });
           db.prepare("UPDATE cards SET slug=? WHERE id=?").run(newSlug, id);
         }
+        if (b.payment_url) { const pu = cleanPayUrl(b.payment_url); if (pu === null) return json(res, 400, { error: PAY_URL_ERROR }); b.payment_url = pu; }
         const cols = CARD_FIELDS.filter((f) => b[f] !== undefined);
         if (cols.length) db.prepare(`UPDATE cards SET ${cols.map((f) => f + "=?").join(",")}, updated_at=datetime('now') WHERE id=?`).run(...cols.map((f) => b[f] ?? null), id);
         return json(res, 200, { ok: true });
@@ -661,6 +730,7 @@ const server = http.createServer(async (req, res) => {
       const b = await jread(req);
       const plan = String(b.plan || "");
       if (!PLANS[plan] || plan === "free") return json(res, 400, { error: "unknown plan" });
+      if (PLAN_RANK[planOf(me)] > PLAN_RANK[plan]) return json(res, 400, { error: `You're already on ${PLANS[planOf(me)].label}. Renew that plan instead.` });
       if (!PAYSTACK_SECRET_KEY) {
         return json(res, 200, { manual: true, url: PAYSTACK_UPGRADE_URL || null,
           note: "Online billing is not configured. Pay via the payment page (or contact the admin) and your account will be upgraded manually." });
@@ -681,6 +751,21 @@ const server = http.createServer(async (req, res) => {
         if (!d.status || !d.data?.authorization_url) return json(res, 502, { error: d.message || "could not start payment" });
         return json(res, 200, { url: d.data.authorization_url });
       } catch { return json(res, 502, { error: "payment service unreachable, try again shortly" }); }
+    }
+
+    /* return-from-checkout: confirm with Paystack directly (backup for the webhook) */
+    if (req.method === "GET" && p === "/api/billing/verify") {
+      if (!needAuth()) return;
+      const ref = String(url.searchParams.get("reference") || "").slice(0, 100);
+      if (!ref) return json(res, 400, { error: "missing reference" });
+      if (!PAYSTACK_SECRET_KEY) return json(res, 400, { error: "online billing is not configured" });
+      let tx; try { tx = await paystackVerify(ref); } catch (e) { return json(res, 502, { error: "could not confirm payment yet — try again in a minute" }); }
+      if (Number(tx.metadata && tx.metadata.uid) !== me.id) return json(res, 403, { error: "this payment belongs to another account" });
+      if (tx.status !== "success") return json(res, 402, { error: "payment not completed (" + (tx.status || "unknown") + ")", status: tx.status });
+      const r = applyPayment(tx, "verify");
+      if (!r.ok) return json(res, 400, { error: r.reason });
+      const fresh = db.prepare("SELECT * FROM users WHERE id=?").get(me.id);
+      return json(res, 200, { ok: true, plan: planOf(fresh), expires: fresh.plan_expires });
     }
 
     /* admin: user management */
