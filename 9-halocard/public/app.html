@@ -548,7 +548,14 @@ function parseCsv(text){ /* RFC-4180: handles quoted fields, embedded commas, ""
 (async()=>{if(await guard()){
   document.getElementById('app').classList.remove('hidden');
   const q=new URLSearchParams(location.search);
-  if(q.get('reference')||q.get('trxref')){toast('🎉 Payment received — your plan activates within a minute. Refresh shortly.');history.replaceState(null,'','/app');}
+  const ref=q.get('reference')||q.get('trxref');
+  if(ref){history.replaceState(null,'','/app');toast('Confirming your payment…');
+    const tryVerify=async(n)=>{try{const r=await fetch('/api/billing/verify?reference='+encodeURIComponent(ref),{headers:HDRS});const d=await r.json().catch(()=>({}));
+      if(r.ok){ME=await api('/api/me');applyRole();toast('🎉 Payment confirmed — you\u2019re now on '+(d.plan==='business'?'Business 👑':'Pro ⭐')+'!');return;}
+      if(r.status===402){toast('Payment was not completed. You have not been charged for an upgrade.');return;}
+      if(n<3)return setTimeout(()=>tryVerify(n+1),4000);toast(d.error||'We could not confirm the payment yet — refresh in a minute.');}
+      catch{if(n<3)setTimeout(()=>tryVerify(n+1),4000);}};
+    tryVerify(0);}
   try{const {cards}=await api('/api/cards');
     if(!cards.length){toast('Welcome! Let\u2019s design your first card ✨');newCard();return;}
   }catch{}
