@@ -1,7 +1,7 @@
 {
   "name": "HaloCard — Smart Contact QR Cards",
   "short_name": "HaloCard",
-  "description": "Create smart QR contact cards for your Halo brands. Edit anytime — the printed QR never changes.",
+  "description": "Your smart digital business card — QR & NFC, WhatsApp, MoMo payments and leads. Made in Ghana.",
   "start_url": "/app?source=pwa",
   "scope": "/",
   "id": "/",
@@ -10,10 +10,54 @@
   "background_color": "#171410",
   "theme_color": "#171410",
   "lang": "en",
-  "categories": ["productivity", "business"],
+  "categories": [
+    "productivity",
+    "business"
+  ],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "shortcuts": [
+    {
+      "name": "My cards",
+      "url": "/app?view=cards",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Leads",
+      "url": "/app?view=leads",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

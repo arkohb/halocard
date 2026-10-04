@@ -171,3 +171,35 @@ New Railway variables (all optional):
                               paste with real line breaks or \n)
 Apple Wallet is not included: it needs an Apple Developer account
 (US$99/yr), a Pass Type certificate and a signing library.
+
+----------------------------------------------------------------
+ADMIN DASHBOARD, INSTALLABLE APP (PWA) & "WHAT'S NEW"
+----------------------------------------------------------------
+Admin "Overview" tab (sign in with ADMIN_EMAIL): revenue this month
+and all time (plans + NFC cards), customers, paying %, scans and
+leads in the last 30 days, revenue and sign-up charts (12 months),
+plan breakdown, plans expiring in the next 30 days (with a "Remind"
+email button), most-scanned cards, recent payments (+ CSV export),
+and "Send monthly reports now". Users tab now has search + plan filter.
+Revenue only counts payments made through the app (Paystack); plans
+you change by hand in Users are not counted as revenue.
+
+Install as an app: on Android (Chrome) users get an "Install" prompt
+on the dashboard and in Account; on iPhone, Account → Install app
+shows the Safari "Add to Home Screen" steps. The installed app opens
+full-screen, has My cards / Leads shortcuts, keeps you signed in, and
+shows your last saved cards and leads when there's no internet.
+
+HOW TO PUBLISH AN UPDATE (each time you change the app):
+1. Make your changes.
+2. Open public/changelog.json and add a NEW entry at the TOP, e.g.
+   { "version": "2026.11.1", "date": "2026-11-01",
+     "title": "Short headline",
+     "notes": ["What changed, in plain words.", "Admins: lines starting
+     with 'Admins:' are only shown to the admin."] }
+   The version must be different from the previous one.
+3. Upload to GitHub. Railway redeploys.
+Then every user's app shows "A new version of HaloCard is ready —
+Refresh", and after refreshing (or next open) a "✨ HaloCard was
+updated" note with your entry. Account → What's new lists all updates.
+/health also reports the current version.

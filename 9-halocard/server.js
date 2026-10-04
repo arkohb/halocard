@@ -914,7 +914,12 @@ ${PRO ? `<script>
 }
 
 /* ---------- static files ---------- */
-const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".map": "application/json" };
+/* release notes: public/changelog.json — newest first. Adding an entry changes the version,
+   which updates the service worker and shows "What's new" to every user once. */
+let CHANGELOG = [];
+try { CHANGELOG = JSON.parse(fs.readFileSync(path.join(__dirname, "public", "changelog.json"), "utf8")); } catch { CHANGELOG = []; }
+const APP_VERSION = (CHANGELOG[0] && CHANGELOG[0].version) || "1.0.0";
+const MIME = { ".json": "application/json", ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".map": "application/json" };
 const PAGES = { "/": "home.html", "/login": "index.html", "/register": "index.html", "/app": "app.html", "/start": "landing.html" };
 function serveStatic(req, res, pathname) {
   const rel = PAGES[pathname] || pathname.replace(/^\/+/, "");
@@ -925,8 +930,10 @@ function serveStatic(req, res, pathname) {
     if (err) { res.writeHead(404, { "Content-Type": "text/html" }); return res.end("<h1>404</h1>"); }
     const type = MIME[path.extname(full)] || "application/octet-stream";
     /* html pages may carry a __BASE__ token so social crawlers get absolute og:image URLs */
-    if (path.extname(full) === ".html") buf = Buffer.from(buf.toString().split("__BASE__").join(baseUrl(req)));
-    res.writeHead(200, { "Content-Type": type, "Content-Length": buf.length });
+    if (path.extname(full) === ".html") buf = Buffer.from(buf.toString().split("__BASE__").join(baseUrl(req)).split("__VERSION__").join(APP_VERSION));
+    if (rel === "sw.js") buf = Buffer.from(buf.toString().split("__VERSION__").join(APP_VERSION));
+    const fresh = rel === "sw.js" || rel === "changelog.json" || rel === "manifest.webmanifest" || path.extname(full) === ".html";
+    res.writeHead(200, { "Content-Type": type, "Content-Length": buf.length, "Cache-Control": fresh ? "no-cache" : "public, max-age=86400" });
     res.end(req.method === "HEAD" ? undefined : buf);
   });
 }
@@ -944,7 +951,8 @@ const server = http.createServer(async (req, res) => {
   if (p === "/api/public/lead" && req.method === "POST" && !rateLimit(req, "lead", 6, 10 * 60 * 1000)) return json(res, 429, { error: "Too many submissions, please try again later." });
 
   try {
-    if (p === "/health") return json(res, 200, { ok: true, time: new Date().toISOString() });
+    if (p === "/health") return json(res, 200, { ok: true, version: APP_VERSION, time: new Date().toISOString() });
+    if (req.method === "GET" && p === "/api/version") return json(res, 200, { version: APP_VERSION, changelog: CHANGELOG.slice(0, 12) });
 
     /* ---------- public: dynamic profile + vCard (the QR target) ---------- */
     const mVcf = p.match(/^\/c\/([A-Za-z0-9-]+)\/vcard\.vcf$/);
@@ -1400,6 +1408,51 @@ const server = http.createServer(async (req, res) => {
         if (!d.status || !d.data?.authorization_url) return json(res, 502, { error: d.message || "could not start payment" });
         return json(res, 200, { ok: true, order: orderId, url: d.data.authorization_url });
       } catch { return json(res, 502, { error: "payment service unreachable, try again shortly" }); }
+    }
+    if (req.method === "GET" && p === "/api/admin/stats") {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      const one = (sql, ...a) => db.prepare(sql).get(...a);
+      const users = db.prepare("SELECT id, email, name, role, plan, plan_expires, created_at, team_id, referred_by FROM users").all();
+      const plans = { free: 0, pro: 0, business: 0 };
+      for (const u of users) if (u.role !== "admin") plans[planOf(u)] = (plans[planOf(u)] || 0) + 1;
+      const customers = users.filter((u) => u.role !== "admin").length;
+      const months = []; const now = new Date();
+      for (let i = 11; i >= 0; i--) { const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1)); months.push(d.toISOString().slice(0, 7)); }
+      const pay = db.prepare("SELECT substr(at,1,7) m, plan, SUM(amount) a, COUNT(*) n FROM payments GROUP BY m, plan").all();
+      const revenue = months.map((m) => {
+        const r = { m, plans: 0, nfc: 0 };
+        for (const x of pay.filter((x) => x.m === m)) { if (x.plan === "nfc") r.nfc += x.a / 100; else r.plans += x.a / 100; }
+        return r;
+      });
+      const sign = db.prepare("SELECT substr(created_at,1,7) m, COUNT(*) n FROM users WHERE role!='admin' GROUP BY m").all();
+      const signups = months.map((m) => ({ m, n: (sign.find((x) => x.m === m) || {}).n || 0 }));
+      const tot = one("SELECT COALESCE(SUM(amount),0) a, COUNT(*) n FROM payments");
+      const thisMonth = months[11];
+      const in30 = new Date(Date.now() + 30 * 86400000).toISOString(), ago30 = new Date(Date.now() - 30 * 86400000).toISOString(), nowIso = new Date().toISOString();
+      const expiring = users.filter((u) => u.role !== "admin" && u.plan && u.plan !== "free" && u.plan_expires && u.plan_expires > ago30 && u.plan_expires < in30)
+        .map((u) => ({ id: u.id, email: u.email, name: u.name, plan: u.plan, expires: u.plan_expires, expired: u.plan_expires < nowIso }))
+        .sort((a, b) => a.expires.localeCompare(b.expires));
+      const recent = db.prepare(`SELECT p.reference, p.plan, p.amount, p.source, p.at, u.email FROM payments p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.at DESC LIMIT 100`).all()
+        .map((x) => ({ ...x, amount: x.amount / 100 }));
+      const top = db.prepare(`SELECT c.id, c.slug, c.first_name, c.last_name, c.company, c.scan_count, c.vcard_downloads, u.email,
+          (SELECT COUNT(*) FROM leads l WHERE l.card_id=c.id) leads FROM cards c LEFT JOIN users u ON u.id=c.user_id ORDER BY c.scan_count DESC LIMIT 10`).all();
+      const sqlAgo = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 19).replace("T", " ");
+      return json(res, 200, {
+        version: APP_VERSION,
+        kpi: {
+          customers, new_this_month: (signups[11] || {}).n || 0, paying: plans.pro + plans.business,
+          revenue_total: tot.a / 100, payments: tot.n, revenue_month: (revenue[11].plans + revenue[11].nfc),
+          cards: one("SELECT COUNT(*) n FROM cards").n, cards_live: one("SELECT COUNT(*) n FROM cards WHERE active=1").n,
+          scans: one("SELECT COALESCE(SUM(scan_count),0) n FROM cards").n, scans_30: one("SELECT COUNT(*) n FROM events WHERE type='scan' AND at>=?", sqlAgo(30)).n,
+          saves: one("SELECT COALESCE(SUM(vcard_downloads),0) n FROM cards").n, leads: one("SELECT COUNT(*) n FROM leads").n,
+          leads_30: one("SELECT COUNT(*) n FROM leads WHERE at>=?", sqlAgo(30)).n,
+          teams: one("SELECT COUNT(*) n FROM teams").n, referred: users.filter((u) => u.referred_by).length,
+          orders_open: one("SELECT COUNT(*) n FROM nfc_orders WHERE status IN ('paid','printing','shipped')").n,
+          orders_waiting: one("SELECT COUNT(*) n FROM nfc_orders WHERE status='awaiting_payment'").n,
+        },
+        plans, revenue, signups, expiring, recent, top, month: thisMonth, email_on: !!RESEND_API_KEY,
+      });
     }
     if (req.method === "POST" && p === "/api/admin/reports/run") {
       if (!needAuth()) return;

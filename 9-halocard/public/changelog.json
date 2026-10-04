@@ -1,0 +1,57 @@
+[
+  {
+    "version": "2026.10.6",
+    "date": "2026-10-04",
+    "title": "Admin dashboard, install as an app & What's new",
+    "notes": [
+      "Install HaloCard on your phone like an app — tap “Install app” in Account (works offline too).",
+      "You'll now see a short note like this whenever HaloCard is updated, and a “Refresh” bar when a new version is ready.",
+      "Admins: new Overview dashboard — revenue, sign-ups, plans, expiring plans, payments and top cards.",
+      "Admins: search and filter users."
+    ]
+  },
+  {
+    "version": "2026.10.5",
+    "date": "2026-10-04",
+    "title": "A cleaner, more professional look",
+    "notes": [
+      "New header and tab bar (My cards · Leads · Team).",
+      "Tidier card list with a ⋯ menu, and leads shown as clear panels with status tags.",
+      "The card editor now fits phones properly, and pop-ups slide up from the bottom on mobile."
+    ]
+  },
+  {
+    "version": "2026.10.4",
+    "date": "2026-10-04",
+    "title": "Teams, events, referrals & monthly reports",
+    "notes": [
+      "Business plan: Team page — one company brand for every staff card, all staff leads in one inbox.",
+      "Event mode: show “Meet me at…” on your card and tag leads by event.",
+      "🎁 Invite friends and earn free days of Pro.",
+      "Monthly scan report by email (switch off in Account).",
+      "Add to Google Wallet (once set up by the admin)."
+    ]
+  },
+  {
+    "version": "2026.10.3",
+    "date": "2026-10-04",
+    "title": "Business profile & NFC cards",
+    "notes": [
+      "Pro cards: Verified badge, WhatsApp chat, booking, directions, reviews, opening hours, price list, intro video and 3 themes.",
+      "Leads: status, private notes, unread count and email alerts.",
+      "Order physical NFC cards (PVC or metal) and pay with MoMo.",
+      "Save your QR to your phone's photos to share offline."
+    ]
+  },
+  {
+    "version": "2026.10.2",
+    "date": "2026-10-04",
+    "title": "Fixes",
+    "notes": [
+      "PNG and PDF export fixed.",
+      "QR codes always open your card (no more “Copy”).",
+      "Save to Contacts opens your phone's contact screen; the back QR adds the contact in one scan.",
+      "Paystack payments confirm instantly when you return from paying."
+    ]
+  }
+]

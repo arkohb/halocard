@@ -35,30 +35,208 @@
 </style>
 <script src="/vendor/qrcode.js"></script>
 <script src="/vendor/jspdf.umd.min.js"></script>
+
+<style id="polish">
+/* ===================== HaloCard polish layer ===================== */
+:root{--shadow:0 1px 2px rgba(23,20,16,.05),0 4px 14px rgba(23,20,16,.05);--shadow-lg:0 18px 50px rgba(23,20,16,.22);--r:14px}
+html{-webkit-text-size-adjust:100%}
+body{background:#f6f1e6;font-size:15px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;padding:1.4rem 1.25rem 4rem}
+h2{font-size:1.35rem}
+/* header */
+header.bar{position:relative;padding:.7rem 1.25rem;gap:.55rem;box-shadow:0 1px 0 #2a251d;flex-wrap:nowrap}
+header.bar .brand{font-size:1.2rem;letter-spacing:-.02em;text-decoration:none;white-space:nowrap}
+.greet{color:#c9bea6;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.plan{display:inline-block;margin-left:.25rem;padding:.08rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;letter-spacing:.03em;vertical-align:1px;background:#2c261d;color:#d8ccb0;border:1px solid #3d362a}
+.plan.pro{background:rgba(242,193,78,.14);color:#f2c14e;border-color:rgba(242,193,78,.35)}
+.plan.business,.plan.admin{background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410;border:none}
+.hbtn{display:inline-flex;align-items:center;gap:.35rem;background:transparent;border:1px solid #3a342a;color:#efe6d2;border-radius:10px;padding:.42rem .7rem;font:600 .84rem var(--body);cursor:pointer;white-space:nowrap}
+.hbtn:hover{background:#231f18;border-color:#4b4335}
+.hbtn span{font-size:.95rem;line-height:1}
+.btn.upg{background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410;white-space:nowrap}
+/* tab bar */
+.tabsbar{position:sticky;top:0;z-index:19;display:flex;gap:.25rem;padding:0 1.25rem;background:#fffdf8;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabsbar::-webkit-scrollbar{display:none}
+.ntab{position:relative;background:none;border:none;padding:.85rem .85rem .8rem;font:600 .92rem var(--body);color:var(--dim);cursor:pointer;white-space:nowrap;border-bottom:2.5px solid transparent;margin-bottom:-1px}
+.ntab:hover{color:var(--txt)}
+.ntab.on{color:var(--txt);border-bottom-color:var(--accent)}
+.ntab .badge{margin-left:.35rem;vertical-align:1px}
+@media(min-width:1180px){.tabsbar{padding-left:calc((100vw - 1180px)/2 + 1.25rem)}}
+/* page heading row */
+.pagehead{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;margin:0 0 .9rem}
+.pagehead h2{margin:0}
+#dash .pagehead{margin-top:1.4rem}
+select.slim{width:auto;padding:.42rem .6rem;font-size:.86rem;border-radius:9px;background:#fff}
+/* cards & stats */
+.card{border-color:#e7dcc4;border-radius:var(--r);box-shadow:var(--shadow);padding:1.25rem}
+.card h3{font-size:1rem}
+.metricGrid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.8rem}
+.stat{border-color:#e7dcc4;border-radius:var(--r);box-shadow:var(--shadow);padding:1rem 1.1rem}
+.stat .k{display:flex;align-items:center;gap:.4rem;font-size:.7rem}
+.stat .v{font-size:1.75rem;font-family:var(--display);letter-spacing:-.02em;line-height:1.15}
+.stat .of{font:500 .8rem var(--body);color:var(--dim);margin-left:.35rem;letter-spacing:0}
+.stat.link{cursor:pointer;transition:border-color .15s}.stat.link:hover{border-color:var(--accent)}
+/* buttons & inputs */
+.btn{border-radius:10px;transition:filter .15s,background .15s,border-color .15s;white-space:nowrap;text-decoration:none}
+.btn.sm{padding:.45rem .75rem;font-size:.84rem}
+.btn.ghost{background:#fff;border-color:#e2d6bd}
+.btn.ghost:hover{background:#fbf7ee;border-color:#cdbf9f;filter:none}
+.btn.wa{background:#25D366;color:#fff}
+.btn.icon{padding:.45rem .55rem}
+input,select,textarea{background:#fffdf8;border-color:#e2d6bd;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+input:disabled{opacity:.6;cursor:not-allowed}
+label{color:#5f5646}
+.chip{display:inline-block;font-size:.7rem;font-weight:700;border-radius:999px;padding:.12rem .5rem;vertical-align:1px}
+.chip.green{background:#e3f4ea;color:#1f7a4d}.chip.grey{background:#efe8d8;color:#7a6f5c}
+.badge{background:#c0392b;font-size:.68rem;line-height:1.15rem;min-width:1.15rem}
+/* avatar initials */
+.ava{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#171410;color:#f2c14e;font:700 .95rem var(--display);letter-spacing:.02em}
+.ava.sm{width:38px;height:38px;font-size:.82rem}
+/* card list */
+#cardList{padding:.3rem 1.1rem}
+.cardItem{padding:.85rem 0;gap:1rem}
+.cardItem.off .ava{background:#bdb3a0;color:#fff}
+.ci-main{display:flex;align-items:center;gap:.85rem;min-width:0;flex:1;cursor:pointer}
+.ci-txt{min-width:0}
+.ci-name{font-weight:700;font-size:1rem;color:var(--txt);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.ci-sub{font-size:.86rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci-stats{display:flex;gap:.9rem;font-size:.78rem;color:#8a7f6a;margin-top:.15rem}
+.ci-act{display:flex;gap:.35rem;align-items:center;flex:none}
+details.more{position:relative}
+details.more>summary{list-style:none;cursor:pointer}
+details.more>summary::-webkit-details-marker{display:none}
+details.more .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;background:#fff;border:1px solid #e2d6bd;border-radius:12px;box-shadow:var(--shadow-lg);padding:.35rem;min-width:190px}
+details.more .menu button{display:block;width:100%;text-align:left;background:none;border:none;padding:.55rem .7rem;border-radius:8px;font:500 .9rem var(--body);cursor:pointer;color:var(--txt)}
+details.more .menu button:hover{background:#f6f1e6}
+details.more .menu .danger{color:#c0392b}
+.empty{text-align:center;padding:2.2rem 1rem;color:var(--dim)}
+.empty .e-ic{font-size:2.2rem;margin-bottom:.4rem}
+.empty b{display:block;color:var(--txt);font-size:1.05rem;margin-bottom:.25rem}
+.empty p{margin:.2rem auto 1rem;max-width:360px;font-size:.92rem}
+/* leads */
+.leadlist{display:flex;flex-direction:column;gap:.7rem}
+.lead{background:#fff;border:1px solid #e7dcc4;border-radius:var(--r);box-shadow:var(--shadow);padding:1rem 1.1rem}
+.lead.unread{border-left:4px solid var(--accent)}
+.lead-top{display:flex;align-items:center;gap:.75rem}
+.lead-who{flex:1;min-width:0}
+.lstat{width:auto;flex:none;padding:.35rem 1.6rem .35rem .65rem;border-radius:999px;font-size:.8rem;font-weight:700;border:1px solid transparent;cursor:pointer;appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23786e5b'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .6rem center}
+.lstat.new{background-color:#fff1cc;color:#8a6410}.lstat.contacted{background-color:#e3eefb;color:#245a94}.lstat.won{background-color:#e3f4ea;color:#1f7a4d}.lstat.lost{background-color:#f3e3df;color:#a33a2a}
+.quote{margin:.7rem 0 0;padding:.55rem .8rem;background:#faf6ec;border-left:3px solid #e2d6bd;border-radius:0 10px 10px 0;font-size:.92rem;color:#3d362a}
+.lead-meta{font-size:.78rem;color:#8a7f6a;margin-top:.55rem}
+.lnote{margin-top:.55rem;border-style:dashed;background:#fdfaf2;resize:vertical;min-height:2.3rem}
+.lead-act{display:flex;align-items:center;gap:.4rem;margin-top:.65rem;flex-wrap:wrap}
+.lead-act .spacer{flex:1}
+/* designer */
+.designer{grid-template-columns:minmax(0,1fr) 400px;gap:1.2rem}
+.designer>*{min-width:0}
+.previewWrap{top:3.6rem}
+.cardPrev{border-color:#e7dcc4;box-shadow:var(--shadow);border-radius:var(--r);background:linear-gradient(180deg,#fff,#faf6ec)}
+.tpl{padding:.4rem .8rem}
+.swatch{width:30px;height:30px}
+.hgrid{grid-template-columns:2.6rem minmax(0,1fr) minmax(0,1fr) auto}
+.mrow{grid-template-columns:minmax(0,1fr) 5.5rem auto}
+#editor .card+.card,#editor .card{margin-top:0}
+#editor .designer>div:first-child{display:flex;flex-direction:column;gap:1rem}
+#editor .designer>div:first-child>.card{margin-top:0!important}
+/* tables */
+.tablewrap{overflow-x:auto;margin:0 -.2rem}
+.tbl{width:100%;border-collapse:collapse;font-size:.9rem}
+.tbl th{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);padding:.5rem .5rem;border-bottom:1px solid var(--line);text-align:left}
+.tbl td{padding:.65rem .5rem;border-bottom:1px solid #f0e8d6;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+/* leadrow (users, orders, team lists) */
+.leadrow{padding:.8rem 0;gap:.8rem}
+/* modal */
+.modalwrap{background:rgba(23,20,16,.55);backdrop-filter:blur(2px);padding:1.2rem}
+.modalcard{border-radius:18px;box-shadow:var(--shadow-lg);padding:1.3rem 1.4rem 1.4rem;max-width:560px;max-height:90vh;animation:pop .18s ease-out}
+.modalcard.wide{max-width:900px}
+@keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.mhead{margin-bottom:.9rem}
+.mhead h3{font-size:1.1rem}
+.xbtn{width:34px;height:34px;border-radius:50%;border:1px solid #e2d6bd;background:#fff;cursor:pointer;font-size:.95rem;color:#5f5646;flex:none}
+.xbtn:hover{background:#f6f1e6}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}
+.plans>.card{min-width:0!important;margin:0}
+.modalcard .metricGrid{grid-template-columns:repeat(3,1fr)}
+.toast{border-radius:12px;box-shadow:var(--shadow-lg);font-weight:500;bottom:1.4rem}
+.installtip{display:flex;align-items:center;gap:.8rem;background:#fff;border:1px solid #e7dcc4;border-left:4px solid var(--accent);border-radius:var(--r);box-shadow:var(--shadow);padding:.8rem 1rem;margin-bottom:1rem}
+.installtip>div{flex:1;min-width:0}.installtip .it-ic{font-size:1.6rem}
+.updbar{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);z-index:70;width:max-content;max-width:min(440px,calc(100% - 1.5rem));display:flex;align-items:center;gap:.8rem;background:#171410;color:#fdf6e6;border:1px solid #3a342a;border-radius:14px;padding:.6rem .7rem .6rem 1rem;box-shadow:var(--shadow-lg);font-size:.9rem;max-width:calc(100% - 1.5rem)}
+.rel{padding:.2rem 0 .6rem}.rel.old{border-top:1px solid #efe7d4;padding-top:.8rem;opacity:.85}
+.rel-h{display:flex;justify-content:space-between;gap:.6rem;align-items:baseline;flex-wrap:wrap}.rel-h span{font-size:.75rem;color:#8a7f6a}
+.rel ul{margin:.45rem 0 0;padding-left:1.15rem}.rel li{margin:.25rem 0;font-size:.92rem;line-height:1.45}
+.steps{padding-left:1.2rem;line-height:1.7}.kbd{display:inline-block;border:1px solid #e2d6bd;border-radius:6px;padding:0 .35rem;background:#faf6ec;font-size:.85rem}
+.stat .sub{font-size:.75rem;color:#8a7f6a;margin-top:.2rem}
+#adminView .metricGrid{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:720px){#adminView .metricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.admgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;margin-top:1rem}
+.ch{display:flex;justify-content:space-between;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem}.ch h3{margin:0}
+.legend{font-size:.75rem;color:#8a7f6a;display:flex;align-items:center;gap:.35rem}.legend i,.planlegend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.chart{width:100%;height:auto;display:block}
+.planbar{display:flex;height:14px;border-radius:999px;overflow:hidden;background:#efe7d4;margin:.6rem 0}
+.planlegend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.86rem}.planlegend span{display:flex;align-items:center;gap:.35rem}.planlegend small{color:#8a7f6a}
+@media(max-width:900px){
+  .designer{grid-template-columns:minmax(0,1fr)}
+  .previewWrap{position:static;order:-1}
+}
+.nfcbanner .btn.ghost{background:transparent;color:#fdf6e6;border-color:#4a443a}
+.nfcbanner .btn.ghost:hover{background:#2a241b}
+.lead .ci-sub{white-space:normal;word-break:break-word}
+/* phones */
+@media(max-width:720px){
+  .wrap{padding:1rem .85rem 4rem}
+  header.bar{padding:.6rem .85rem}
+  .hbtn b{display:none}
+  .hbtn{padding:.45rem .55rem}
+  .greet{font-size:.8rem}
+  .tabsbar{padding:0 .5rem}
+  .ntab{padding:.75rem .7rem .7rem;font-size:.88rem}
+  .metricGrid{grid-template-columns:repeat(2,1fr);gap:.6rem}
+  .stat{padding:.8rem .9rem}.stat .v{font-size:1.45rem}
+  #cardList{padding:.2rem .9rem}
+  .cardItem{flex-direction:column;align-items:stretch;gap:.6rem}
+  .ci-act{justify-content:flex-start;padding-left:calc(44px + .85rem)}
+  .lead{padding:.9rem}
+  .lead-top{flex-wrap:wrap}
+  .card{padding:1rem}
+  .hide-sm{display:none}
+  .modalwrap{align-items:flex-end;padding:0}
+  .modalcard{max-width:none;border-radius:20px 20px 0 0;max-height:92vh;padding:1.1rem 1rem 1.4rem}
+  .previewWrap{position:static}
+}
+@media(max-width:420px){.greet{display:none}}
+</style>
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="/" style="text-decoration:none">Halo<span>Card</span> 🪪</a>
-  <span id="greet" class="small" style="color:#a99e8a;margin-left:.4rem"></span>
+  <a class="brand" href="/">Halo<span>Card</span></a>
+  <span id="greet" class="greet"></span>
   <div class="spacer"></div>
-  <button class="btn ghost sm" id="navCards" style="color:#fdf6e6;border-color:#4a443a" onclick="showDash()">My cards</button>
-  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="showLeads()">Leads<span id="leadBadge" class="badge hidden"></span></button>
-  <button class="btn ghost sm admin-only hidden" style="color:#fdf6e6;border-color:#4a443a" onclick="showOrders()">Orders</button>
-  <button class="btn ghost sm hidden" id="navTeam" style="color:#fdf6e6;border-color:#4a443a" onclick="showTeam()">Team</button>
-  <button class="btn ghost sm" style="color:#f2c14e;border-color:#4a443a" onclick="openReferral()">🎁 Invite</button>
-  <button class="btn ghost sm admin-only hidden" style="color:#fdf6e6;border-color:#4a443a" onclick="showUsers()">Users</button>
-  <button class="btn sm hidden" id="upgradeBtn" style="background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410" onclick="openPricing()">⭐ Upgrade</button>
-  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" title="Account" onclick="openAccount()">⚙️</button>
-  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="logout()">Sign out</button>
+  <button class="btn sm upg hidden" id="upgradeBtn" onclick="openPricing()">⭐ Upgrade</button>
+  <button class="hbtn" title="Invite friends" onclick="openReferral()"><span>🎁</span><b>Invite</b></button>
+  <button class="hbtn" title="Account" onclick="openAccount()"><span>⚙️</span><b>Account</b></button>
+  <button class="hbtn" title="Sign out" onclick="logout()"><span>↪</span><b>Sign out</b></button>
 </header>
+<nav class="tabsbar" id="tabsbar">
+  <button class="ntab admin-only hidden" data-v="adminView" onclick="showAdmin()">Overview</button>
+  <button class="ntab on" data-v="dash" onclick="showDash()">My cards</button>
+  <button class="ntab" data-v="leadsView" onclick="showLeads()">Leads<span id="leadBadge" class="badge hidden"></span></button>
+  <button class="ntab hidden" data-v="teamView" id="navTeam" onclick="showTeam()">Team</button>
+  <button class="ntab admin-only hidden" data-v="ordersView" onclick="showOrders()">Orders</button>
+  <button class="ntab admin-only hidden" data-v="usersView" onclick="showUsers()">Users</button>
+</nav>
 
 <div class="wrap hidden" id="app">
 
   <!-- DASHBOARD -->
   <div id="dash">
+    <div id="installTip" class="installtip hidden"><span class="it-ic">📲</span><div><b>Install HaloCard on your phone</b><div class="small">Open it from your home screen like any app — faster, and it works offline.</div></div>
+      <button class="btn sm" onclick="installApp()">Install</button><button class="xbtn" title="Dismiss" onclick="dismissInstall()">✕</button></div>
     <div class="metricGrid" id="metrics"></div>
-    <div class="row" style="justify-content:space-between;margin:1.1rem 0 .4rem">
-      <h2 style="margin:0">My cards</h2>
+    <div class="pagehead">
+      <h2>My cards</h2>
       <div class="row" style="gap:.4rem">
         <button class="btn ghost sm admin-only hidden" onclick="document.getElementById('csvFile').click()">Bulk CSV</button>
         <input id="csvFile" type="file" accept=".csv" class="hidden" onchange="importCsv(this)">
@@ -66,40 +244,50 @@
       </div>
     </div>
     <div class="card" id="cardList"></div>
-    <div class="card" style="margin-top:.9rem;display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;background:linear-gradient(135deg,#171410,#2c251a);color:#fdf6e6;border:none">
+    <div class="card nfcbanner" style="margin-top:.9rem;display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;background:linear-gradient(135deg,#171410,#2c251a);color:#fdf6e6;border:none">
       <div style="font-size:2.2rem">📇</div>
       <div style="flex:1;min-width:200px"><strong style="color:#f2c14e">Get a physical NFC HaloCard</strong>
         <div class="small" style="color:#cfc3a8">Tap it on any phone to open your card — kente PVC or black &amp; gold metal, delivered in Ghana.</div></div>
       <button class="btn sm" style="background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410" onclick="openNfcShop()">Order NFC card</button>
-      <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="myOrders()">My orders</button>
+      <button class="btn ghost sm" onclick="myOrders()">My orders</button>
     </div>
   </div>
 
   <!-- TEAM (Business) -->
   <div id="teamView" class="hidden">
-    <h2 style="margin:0 0 .4rem">Team <span class="probadge">BUSINESS</span></h2>
+    <div class="pagehead"><h2>Team <span class="probadge">BUSINESS</span></h2></div>
     <div id="teamBody"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
   <!-- ADMIN: NFC ORDERS -->
   <div id="ordersView" class="hidden">
-    <h2 style="margin:0 0 .4rem">NFC card orders</h2>
+    <div class="pagehead"><h2>NFC card orders</h2></div>
     <div class="card" id="orderList"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
   <!-- LEADS INBOX -->
   <div id="leadsView" class="hidden">
-    <div class="row" style="justify-content:space-between;margin:0 0 .4rem">
-      <h2 style="margin:0">Leads inbox</h2>
-      <div class="row" style="gap:.4rem"><select id="leadFilter" onchange="renderLeads()" style="padding:.4rem;border-radius:8px;border:1.5px solid #e6dcc6"><option value="">All leads</option></select>
-      <button class="btn ghost sm" onclick="exportLeadsCsv()">Export CSV</button></div>
+    <div class="pagehead">
+      <h2>Leads</h2>
+      <div class="row" style="gap:.4rem"><select id="leadFilter" class="slim" onchange="renderLeads()"><option value="">All leads</option></select>
+      <button class="btn ghost sm" onclick="exportLeadsCsv()">⬇ Export CSV</button></div>
     </div>
-    <div class="card" id="leadList"><p class="muted center" style="padding:1rem">Loading…</p></div>
+    <div id="leadList" class="leadlist"><p class="muted center" style="padding:1rem">Loading…</p></div>
+  </div>
+
+  <!-- ADMIN: OVERVIEW -->
+  <div id="adminView" class="hidden">
+    <div class="pagehead"><h2>Overview</h2>
+      <div class="row" style="gap:.4rem"><button class="btn ghost sm" onclick="runReports()">✉️ Send monthly reports now</button>
+      <button class="btn ghost sm" onclick="exportPayments()">⬇ Payments CSV</button></div></div>
+    <div id="adminBody"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
   <!-- ADMIN: USERS -->
   <div id="usersView" class="hidden">
-    <h2 style="margin:0 0 .4rem">Users</h2>
+    <div class="pagehead"><h2>Users <span class="muted small" id="userCount"></span></h2>
+      <div class="row" style="gap:.4rem"><input id="userSearch" class="slim" placeholder="Search name or email…" oninput="renderUsers()" style="width:220px">
+      <select id="userPlan" class="slim" onchange="renderUsers()"><option value="">All plans</option><option value="free">Free</option><option value="pro">Pro</option><option value="business">Business</option></select></div></div>
     <div class="card" id="userList"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
@@ -251,22 +439,28 @@
 </div>
 
 <div id="modal" class="modalwrap hidden" onclick="if(event.target===this)closeModal()">
-  <div class="modalcard"><div class="mhead"><h3 id="mTitle"></h3><button class="btn ghost sm" onclick="closeModal()">✕ Close</button></div><div id="mBody"></div></div>
+  <div class="modalcard" role="dialog" aria-modal="true"><div class="mhead"><h3 id="mTitle"></h3><button class="xbtn" title="Close" onclick="closeModal()">✕</button></div><div id="mBody"></div></div>
 </div>
 <div id="toast" class="toast hidden"></div>
 <script>
 const token=localStorage.getItem('hc_token');
 const HDRS={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
 const api=(p,o={})=>fetch(p,{...o,headers:{...HDRS,...(o.headers||{})}}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok){if(d.upgrade)setTimeout(openPricing,600);throw new Error(d.error||'error');}return d;});
+/* GET with an offline copy: the last good answer is kept on the device */
+async function cachedApi(p){try{const d=await api(p);try{localStorage.setItem('hc_c:'+p,JSON.stringify(d));}catch{}return d;}
+  catch(e){const c=localStorage.getItem('hc_c:'+p);if(c&&(!navigator.onLine||/fetch|network|load/i.test(e.message)))return JSON.parse(c);throw e;}}
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.add('hidden'),3500);}
-function logout(){localStorage.removeItem('hc_token');location.href='/login';}
+function logout(){localStorage.removeItem('hc_token');localStorage.removeItem('hc_me');location.href='/login';}
 function openAccount(){openModal('Account',`
   <label>Your name</label><input id="acc_name" value="${esc(ME.name||'')}">
   <label class="row" style="gap:.5rem;align-items:center;margin-top:.7rem;font-weight:600"><input type="checkbox" id="acc_rep" style="width:auto" ${ME.report_opt_out?'':'checked'}> Email me a monthly scan report</label>
   <div class="row" style="gap:.4rem;margin-top:.6rem"><button class="btn sm" onclick="saveAccount()">Save</button>
     <button class="btn ghost sm" onclick="testReport()" ${ME.email_on?'':'disabled title="Email not set up yet"'}>Send me a report now</button>
     <button class="btn ghost sm" onclick="openPwd()">Change password</button></div>
-  <p class="small muted" style="margin-top:.6rem">Signed in as ${esc(ME.email)} · plan: ${esc(ME.plan)}${ME.plan_expires?' until '+esc(ME.plan_expires.slice(0,10)):''}${ME.team_member?' · team: '+esc(ME.team_member.company||ME.team_member.name||''):''}</p>`);}
+  <div class="divider"></div>
+  <div class="row" style="gap:.4rem"><button class="btn green sm" onclick="installApp()">📲 Install app</button>
+    <button class="btn ghost sm" onclick="showWhatsNew(true)">✨ What's new</button></div>
+  <p class="small muted" style="margin-top:.6rem">Signed in as ${esc(ME.email)} · plan: ${esc(ME.plan)}${ME.plan_expires?' until '+esc(ME.plan_expires.slice(0,10)):''}${ME.team_member?' · team: '+esc(ME.team_member.company||ME.team_member.name||''):''}<br>HaloCard version ${esc(APPV.version||'')}</p>`);}
 async function saveAccount(){try{await api('/api/me/prefs',{method:'PUT',body:JSON.stringify({name:document.getElementById('acc_name').value,report_opt_out:!document.getElementById('acc_rep').checked})});
   ME=await api('/api/me');applyRole();closeModal();toast('Saved');}catch(e){toast(e.message);}}
 async function testReport(){try{await api('/api/report/test',{method:'POST'});toast('Report sent to '+ME.email);}catch(e){toast(e.message);}}
@@ -282,40 +476,55 @@ const ACCENTS=['#d99b16','#1f7a4d','#c0392b','#2a6f97','#7b2cbf','#171410'];
 let APP_URL='', SIDE='front', EDIT_ID=null, CARD={template:'corporate',accent:'#d99b16',photo:null,logo:null};
 
 let ME={role:'user'};
-async function guard(){if(!token){location.href='/login';return false;}try{ME=await api('/api/me');APP_URL=ME.app_url;applyRole();}catch{localStorage.removeItem('hc_token');location.href='/login';return false;}return true;}
+async function guard(){if(!token){location.href='/login';return false;}
+  let r;try{r=await fetch('/api/me',{headers:HDRS});}catch{r=null;}
+  /* only a real "not signed in" answer signs you out — no internet just shows the saved account */
+  if(r&&r.status===401){localStorage.removeItem('hc_token');location.href='/login';return false;}
+  if(r&&r.ok){ME=await r.json();try{localStorage.setItem('hc_me',JSON.stringify(ME));}catch{}}
+  else{try{ME=JSON.parse(localStorage.getItem('hc_me')||'null')||{role:'user',email:'',plan:'free'};}catch{ME={role:'user',email:'',plan:'free'};}
+    setTimeout(()=>toast(navigator.onLine?'Can\u2019t reach HaloCard right now — showing saved data':'You\u2019re offline — reconnect to see the latest'),400);}
+  APP_URL=ME.app_url||'';applyRole();return true;}
+window.addEventListener('online',()=>toast('Back online ✓'));
 function applyRole(){const admin=ME.role==='admin';document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!admin));
-  const g=document.getElementById('greet');if(g)g.textContent=(ME.name?ME.name.split(' ')[0]:ME.email.split('@')[0])+(admin?' · Admin':' · '+(ME.plan==='free'?'Free':ME.plan==='pro'?'Pro ⭐':'Business 👑'));
+  const g=document.getElementById('greet');if(g)g.innerHTML=esc(ME.name?ME.name.split(' ')[0]:ME.email.split('@')[0])+` <span class="plan ${admin?'admin':ME.plan}">${admin?'Admin':ME.plan==='free'?'Free':ME.plan==='pro'?'Pro':'Business'}</span>`;
   document.getElementById('upgradeBtn').classList.toggle('hidden',admin||ME.plan==='business');
   document.getElementById('navTeam').classList.toggle('hidden',!(ME.team_owner||(ME.plan==='business'&&!ME.team_member)));
   document.getElementById('gwBtn').classList.toggle('hidden',!ME.wallet_google);}
 
 /* ============ dashboard ============ */
-function hideAllViews(){for(const id of ['editor','leadsView','usersView','dash','ordersView','teamView'])document.getElementById(id).classList.add('hidden');}
+function hideAllViews(){for(const id of ['editor','leadsView','usersView','dash','ordersView','teamView','adminView'])document.getElementById(id).classList.add('hidden');
+  setTimeout(()=>{const v=['dash','leadsView','teamView','ordersView','usersView','adminView','editor'].find(id=>!document.getElementById(id).classList.contains('hidden'));
+    document.querySelectorAll('.ntab').forEach(b=>b.classList.toggle('on',b.dataset.v===(v==='editor'?'dash':v)));window.scrollTo({top:0});},0);}
 function showDash(){hideAllViews();document.getElementById('dash').classList.remove('hidden');loadDash();}
 async function loadDash(){
-  const o=await api('/api/overview');APP_URL=o.app_url;setLeadBadge(o.leads_new);
+  const o=await cachedApi('/api/overview');APP_URL=o.app_url||APP_URL;setLeadBadge(o.leads_new);
+  let dismissed=false;try{dismissed=!!localStorage.getItem('hc_install_dismissed');}catch{}
+  document.getElementById('installTip').classList.toggle('hidden',isStandalone()||dismissed||!(DEFERRED_INSTALL||/android|iphone|ipad/i.test(navigator.userAgent)));
   document.getElementById('metrics').innerHTML=`
-    <div class="stat"><div class="k">Total cards</div><div class="v">${o.total}</div></div>
-    <div class="stat"><div class="k">Active</div><div class="v" style="color:var(--k-green)">${o.active}</div></div>
-    <div class="stat"><div class="k">QR scans</div><div class="v" style="color:var(--accent)">${o.scans}</div></div>
-    <div class="stat"><div class="k">Contacts saved</div><div class="v">${o.downloads}</div></div>
-    <div class="stat" style="cursor:pointer" onclick="showLeads()"><div class="k">Leads 📩</div><div class="v" style="color:var(--k-gold)">${o.leads}</div></div>`;
-  const {cards}=await api('/api/cards');
+    <div class="stat"><div class="k">Cards</div><div class="v">${o.active}<span class="of">/ ${o.total} live</span></div></div>
+    <div class="stat"><div class="k">QR scans</div><div class="v" style="color:#b07a0c">${o.scans}</div></div>
+    <div class="stat"><div class="k">Contacts saved</div><div class="v" style="color:var(--k-green)">${o.downloads}</div></div>
+    <div class="stat link" onclick="showLeads()"><div class="k">Leads ${o.leads_new?`<span class="badge">${o.leads_new} new</span>`:''}</div><div class="v" style="color:var(--k-red)">${o.leads}</div></div>`;
+  const {cards}=await cachedApi('/api/cards');
+  const ini=c=>esc(((c.first_name||'?')[0]+((c.last_name||'')[0]||'')).toUpperCase());
   document.getElementById('cardList').innerHTML=cards.length?cards.map(c=>`
-    <div class="cardItem">
-      <div><strong>${esc([c.first_name,c.last_name].filter(Boolean).join(' ')||'Untitled')}</strong>
-        <div class="small muted">${esc(c.job_title||'')}${c.company?' · '+esc(c.company):''} · ${esc(c.template)}</div>
-        <div class="small muted">👁 ${c.scan_count} scans · ＋${c.vcard_downloads} saved</div></div>
-      <div class="row" style="gap:.35rem">
-        ${c.owner?`<span class="small muted" style="align-self:center">${esc(c.owner)}</span>`:''}
-        <a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank">Open</a>
-        <button class="btn ghost sm" onclick="statsCard(${c.id})">Stats</button>
-        <button class="btn ghost sm" onclick="sigCard(${c.id})">Sig</button>
-        <button class="btn ghost sm" onclick="editCard(${c.id})">Edit</button>
-        <button class="btn ghost sm" onclick="toggleCard(${c.id})">${c.active?'Disable':'Enable'}</button>
-        <button class="btn red sm" onclick="delCard(${c.id})">✕</button>
+    <div class="cardItem${c.active?'':' off'}">
+      <div class="ci-main" onclick="editCard(${c.id})">
+        <div class="ava">${ini(c)}</div>
+        <div class="ci-txt"><div class="ci-name">${esc([c.first_name,c.last_name].filter(Boolean).join(' ')||'Untitled')} ${c.active?'':'<span class="chip grey">Off</span>'}</div>
+          <div class="ci-sub">${esc([c.job_title,c.company].filter(Boolean).join(' · ')||'—')}${c.owner?` · <span class="muted">${esc(c.owner)}</span>`:''}</div>
+          <div class="ci-stats"><span>👁 ${c.scan_count} scan${c.scan_count==1?'':'s'}</span><span>👤 ${c.vcard_downloads} saved</span></div></div>
       </div>
-    </div>`).join(''):'<p class="muted center" style="padding:1rem">No cards yet. Create your first one.</p>';
+      <div class="ci-act">
+        <button class="btn sm" onclick="editCard(${c.id})">Edit</button>
+        <a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank" rel="noopener">View</a>
+        <button class="btn ghost sm" onclick="statsCard(${c.id})">Stats</button>
+        <details class="more"><summary class="btn ghost sm" title="More">⋯</summary><div class="menu">
+          <button onclick="sigCard(${c.id})">✉️ Email signature</button>
+          <button onclick="toggleCard(${c.id})">${c.active?'⏸ Switch off':'▶ Switch on'}</button>
+          <button class="danger" onclick="delCard(${c.id})">🗑 Delete card</button></div></details>
+      </div>
+    </div>`).join(''):`<div class="empty"><div class="e-ic">🪪</div><b>No cards yet</b><p>Create your first digital business card — it takes about two minutes.</p><button class="btn green" onclick="newCard()">+ Create my card</button></div>`;
 }
 async function toggleCard(id){try{await api('/api/cards/'+id+'/toggle',{method:'POST'});loadDash();}catch(e){toast(e.message);}}
 async function delCard(id){if(!confirm('Delete this card? The QR will stop working.'))return;try{await api('/api/cards/'+id,{method:'DELETE'});toast('Deleted');loadDash();}catch(e){toast(e.message);}}
@@ -554,6 +763,86 @@ async function loadOrders(){try{const {orders,app_url}=await api('/api/admin/ord
   }catch(e){toast(e.message);}}
 async function setOrder(id,patch){try{await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify(patch)});toast('Order updated');loadOrders();}catch(e){toast(e.message);}}
 
+/* ============ version, What's new, install ============ */
+let APPV={version:'',changelog:[]};
+async function loadVersion(){try{APPV=await (await fetch('/api/version',{cache:'no-store'})).json();}catch{}}
+/* show the newest release note once per version (new users just start from the current version) */
+function maybeWhatsNew(){let seen=null;try{seen=localStorage.getItem('hc_seen_version');}catch{}
+  if(APPV.version&&seen!==APPV.version)showWhatsNew(false);}
+function showWhatsNew(all){const list=(APPV.changelog||[]).slice(0,all?12:1);if(!list.length)return;
+  try{localStorage.setItem('hc_seen_version',APPV.version);}catch{}
+  openModal(all?"What's new in HaloCard":"✨ HaloCard was updated",list.map((r,i)=>`<div class="rel${i?' old':''}">
+      <div class="rel-h"><b>${esc(r.title)}</b><span>v${esc(r.version)} · ${esc(new Date(r.date+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}))}</span></div>
+      <ul>${(r.notes||[]).filter(n=>ME.role==='admin'||!/^admins?:/i.test(n)).map(n=>'<li>'+esc(n)+'</li>').join('')}</ul></div>`).join('')
+    +(all?'':`<div class="row" style="justify-content:space-between;margin-top:.8rem"><button class="btn ghost sm" onclick="showWhatsNew(true)">See all updates</button><button class="btn sm" onclick="closeModal()">Got it</button></div>`));}
+let DEFERRED_INSTALL=null;
+function dismissInstall(){try{localStorage.setItem('hc_install_dismissed','1');}catch{}document.getElementById('installTip').classList.add('hidden');}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();DEFERRED_INSTALL=e;});
+window.addEventListener('appinstalled',()=>{DEFERRED_INSTALL=null;toast('HaloCard installed 🎉 — find it on your home screen');});
+function isStandalone(){return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}
+async function installApp(){
+  if(isStandalone()){toast('HaloCard is already installed on this device');return;}
+  if(DEFERRED_INSTALL){DEFERRED_INSTALL.prompt();const r=await DEFERRED_INSTALL.userChoice.catch(()=>({}));DEFERRED_INSTALL=null;if(r.outcome==='accepted')closeModal();return;}
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  openModal('Install HaloCard',ios?`<ol class="steps"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button <span class="kbd">⬆︎</span> at the bottom.</li><li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>`
+    :`<ol class="steps"><li>Open the browser menu <span class="kbd">⋮</span> (top right in Chrome).</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Confirm — HaloCard appears with your other apps.</li></ol>
+      <p class="small muted">On a computer, look for the install icon <span class="kbd">⊕</span> at the right of the address bar.</p>`);}
+
+/* ============ admin overview ============ */
+let ADMIN=null;
+function showAdmin(){hideAllViews();document.getElementById('adminView').classList.remove('hidden');loadAdmin();}
+const ghs=n=>'GHS '+Number(n||0).toLocaleString('en-GH',{maximumFractionDigits:2});
+function barChart(rows,keys,colors,fmt){const max=Math.max(1,...rows.map(r=>keys.reduce((s,k)=>s+(r[k]||0),0)));const W=600,H=150,bw=W/rows.length;
+  const mon=m=>new Date(m+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short'});
+  return `<svg viewBox="0 0 ${W} ${H+22}" class="chart" role="img">${rows.map((r,i)=>{let y=H;return keys.map((k,j)=>{const h=Math.round((r[k]||0)/max*(H-14));y-=h;
+    return h?`<rect x="${(i*bw+bw*.18).toFixed(1)}" y="${y}" width="${(bw*.64).toFixed(1)}" height="${h}" rx="3" fill="${colors[j]}"><title>${mon(r.m)}: ${fmt?fmt(r[k]):r[k]}</title></rect>`:'';}).join('')
+    +`<text x="${(i*bw+bw/2).toFixed(1)}" y="${H+16}" text-anchor="middle" font-size="11" fill="#8a7f6a">${mon(r.m)}</text>`;}).join('')}<line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="#e2d6bd"/></svg>`;}
+async function loadAdmin(){const el=document.getElementById('adminBody');
+  try{const d=ADMIN=await api('/api/admin/stats');const k=d.kpi;
+    const tile=(label,v,sub,col)=>`<div class="stat"><div class="k">${label}</div><div class="v" ${col?`style="color:${col}"`:''}>${v}</div>${sub?`<div class="sub">${sub}</div>`:''}</div>`;
+    const totalUsers=d.plans.free+d.plans.pro+d.plans.business||1;
+    const pct=n=>Math.round(n/totalUsers*100);
+    el.innerHTML=`<div class="metricGrid">
+        ${tile('Revenue this month',ghs(k.revenue_month),'All time: '+ghs(k.revenue_total),'#1f7a4d')}
+        ${tile('Customers',k.customers,'+'+k.new_this_month+' this month')}
+        ${tile('Paying',k.paying,(k.customers?Math.round(k.paying/k.customers*100):0)+'% of customers','#b07a0c')}
+        ${tile('Scans · 30 days',k.scans_30,k.scans+' all time')}
+        ${tile('Leads · 30 days',k.leads_30,k.leads+' all time','#c0392b')}
+        ${tile('Cards live',k.cards_live,k.cards+' created')}
+        ${tile('NFC orders to ship',k.orders_open,k.orders_waiting+' awaiting payment')}
+        ${tile('Teams · referrals',k.teams+' · '+k.referred,'business teams · referred sign-ups')}
+      </div>
+      <div class="admgrid">
+        <div class="card"><div class="ch"><h3>Revenue</h3><span class="legend"><i style="background:#d99b16"></i>Plans <i style="background:#1f7a4d"></i>NFC cards</span></div>${barChart(d.revenue,['plans','nfc'],['#d99b16','#1f7a4d'],ghs)}</div>
+        <div class="card"><div class="ch"><h3>New sign-ups</h3><span class="legend">last 12 months</span></div>${barChart(d.signups,['n'],['#171410'])}</div>
+      </div>
+      <div class="admgrid">
+        <div class="card"><h3>Plans</h3>
+          <div class="planbar"><span style="flex:${d.plans.free||0};background:#cfc3a8"></span><span style="flex:${d.plans.pro||0};background:#f2c14e"></span><span style="flex:${d.plans.business||0};background:#171410"></span></div>
+          <div class="planlegend"><span><i style="background:#cfc3a8"></i>Free <b>${d.plans.free}</b> <small>${pct(d.plans.free)}%</small></span><span><i style="background:#f2c14e"></i>Pro <b>${d.plans.pro}</b> <small>${pct(d.plans.pro)}%</small></span><span><i style="background:#171410"></i>Business <b>${d.plans.business}</b> <small>${pct(d.plans.business)}%</small></span></div>
+          <h3 style="margin-top:1.1rem">Plans expiring (next 30 days)</h3>
+          ${d.expiring.length?`<div class="tablewrap"><table class="tbl"><tr><th>Customer</th><th>Plan</th><th>Expires</th><th></th></tr>${d.expiring.map(u=>`<tr><td><b>${esc(u.name||u.email)}</b><div class="small muted">${esc(u.email)}</div></td><td>${esc(u.plan)}</td>
+            <td>${u.expired?'<span class="chip grey">Expired</span> ':''}${esc(u.expires.slice(0,10))}</td>
+            <td><a class="btn ghost sm" href="mailto:${esc(u.email)}?subject=${encodeURIComponent('Your HaloCard '+u.plan+' plan')}&body=${encodeURIComponent('Hi '+(u.name||'')+',\n\nYour HaloCard '+u.plan+' plan '+(u.expired?'has expired':'expires on '+u.expires.slice(0,10))+'. Renew in the app (Upgrade → Renew for a year) to keep your Pro features.\n\nThank you!')}">Remind</a></td></tr>`).join('')}</table></div>`
+            :'<p class="muted small">No plans expiring soon.</p>'}
+        </div>
+        <div class="card"><h3>Most-scanned cards</h3>
+          ${d.top.length?`<div class="tablewrap"><table class="tbl"><tr><th>Card</th><th>Scans</th><th>Saved</th><th>Leads</th></tr>${d.top.map(c=>`<tr><td><a href="/c/${esc(c.slug)}" target="_blank" rel="noopener"><b>${esc([c.first_name,c.last_name].filter(Boolean).join(' ')||c.slug)}</b></a><div class="small muted">${esc(c.company||c.email||'')}</div></td><td>${c.scan_count}</td><td>${c.vcard_downloads}</td><td>${c.leads}</td></tr>`).join('')}</table></div>`:'<p class="muted small">No cards yet.</p>'}
+        </div>
+      </div>
+      <div class="card" style="margin-top:1rem"><div class="ch"><h3>Recent payments</h3><span class="legend">${k.payments} payment${k.payments==1?'':'s'} recorded</span></div>
+        ${d.recent.length?`<div class="tablewrap"><table class="tbl"><tr><th>Date</th><th>Customer</th><th>For</th><th>Amount</th><th class="hide-sm">Reference</th></tr>${d.recent.slice(0,25).map(p=>`<tr><td>${esc(ago(p.at))}</td><td>${esc(p.email||'—')}</td>
+          <td>${p.plan==='nfc'?'<span class="chip green">NFC card</span>':'<span class="chip">'+esc(p.plan)+'</span>'}</td><td><b>${ghs(p.amount)}</b></td><td class="hide-sm small muted">${esc(p.reference)}</td></tr>`).join('')}</table></div>`
+          :'<p class="muted small">No payments recorded yet. Payments made through the app appear here automatically.</p>'}
+      </div>
+      <p class="small muted center" style="margin-top:1rem">HaloCard v${esc(d.version)} · ${d.email_on?'Email is on':'Email is off — add RESEND_API_KEY in Railway'}</p>`;
+  }catch(e){el.innerHTML='<p class="muted">'+esc(e.message)+'</p>';}}
+async function runReports(){if(!confirm('Email last month\u2019s report to every user now?'))return;try{const r=await api('/api/admin/reports/run',{method:'POST'});toast('Sent '+r.sent+' report'+(r.sent==1?'':'s'));}catch(e){toast(e.message);}}
+function exportPayments(){if(!ADMIN||!ADMIN.recent.length){toast('No payments to export');return;}
+  const q=v=>{v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const csv=['date,customer,for,amount_ghs,source,reference'].concat(ADMIN.recent.map(p=>[p.at,p.email,p.plan,p.amount,p.source,p.reference].map(q).join(','))).join('\r\n');
+  dl(URL.createObjectURL(new Blob([csv],{type:'text/csv'})),'halocard-payments.csv');}
+
 /* ============ referrals ============ */
 async function openReferral(){try{const r=await api('/api/referrals');
   const msg='I use HaloCard for my digital business card — QR + NFC, MoMo payments and WhatsApp. Create yours free: '+r.link;
@@ -582,8 +871,8 @@ async function loadTeam(){const el=document.getElementById('teamBody');
       :`<div class="card"><p>Teams are part of the <b>Business</b> plan: one brand for all staff cards, staff added by email, every lead in one inbox.</p><button class="btn sm" onclick="openPricing()">See Business plan</button></div>`;return;}
     const t=TEAM.team,used=TEAM.members.length+TEAM.invites.length+1;
     const rows=TEAM.cards.map(c=>`<tr><td><b>${esc([c.first_name,c.last_name].filter(Boolean).join(' '))}</b><div class="small muted">${esc(c.job_title||'')}</div></td>
-      <td class="small">${esc(c.email||'')}</td><td>${c.scan_count}</td><td>${c.vcard_downloads}</td><td>${c.leads}</td>
-      <td>${c.active?'✅':'⏸'}</td><td class="row" style="gap:.25rem"><a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank">Open</a><button class="btn ghost sm" onclick="editCard(${c.id})">Edit</button></td></tr>`).join('');
+      <td class="small hide-sm">${esc(c.email||'')}</td><td>${c.scan_count}</td><td>${c.vcard_downloads}</td><td>${c.leads}</td>
+      <td>${c.active?'<span class="chip green">Live</span>':'<span class="chip grey">Off</span>'}</td><td><div class="row" style="gap:.25rem;flex-wrap:nowrap"><a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank">View</a><button class="btn ghost sm" onclick="editCard(${c.id})">Edit</button></div></td></tr>`).join('');
     el.innerHTML=`<div class="metricGrid">
         <div class="stat"><div class="k">People</div><div class="v">${used} / ${TEAM.seats}</div></div>
         <div class="stat"><div class="k">Scans</div><div class="v" style="color:var(--accent)">${TEAM.cards.reduce((s,c)=>s+c.scan_count,0)}</div></div>
@@ -593,8 +882,8 @@ async function loadTeam(){const el=document.getElementById('teamBody');
         <div class="grid cols-3"><div><label>Email *</label><input id="tm_email" type="email"></div><div><label>First name</label><input id="tm_first"></div><div><label>Last name</label><input id="tm_last"></div>
           <div><label>Job title</label><input id="tm_job"></div><div><label>Mobile</label><input id="tm_mobile"></div><div style="align-self:end"><button class="btn green" style="width:100%" onclick="addMember()">Create their card</button></div></div>
         <p class="small muted">Their card is created right away with your brand. They get an email to sign in and add their photo.</p></div>
-      <div class="card" style="margin-top:.8rem;overflow:auto"><h3 style="margin-top:0">Staff cards</h3>
-        <table style="width:100%;font-size:.9rem;border-collapse:collapse"><tr class="small muted" style="text-align:left"><th>Name</th><th>Email</th><th>Scans</th><th>Saved</th><th>Leads</th><th></th><th></th></tr>${rows||'<tr><td colspan="7" class="muted">No staff cards yet.</td></tr>'}</table>
+      <div class="card" style="margin-top:.8rem"><h3 style="margin-top:0">Staff cards</h3>
+        <div class="tablewrap"><table class="tbl"><tr><th>Name</th><th class="hide-sm">Login email</th><th>Scans</th><th>Saved</th><th>Leads</th><th></th><th></th></tr>${rows||'<tr><td colspan="7" class="muted">No staff cards yet.</td></tr>'}</table></div>
         ${TEAM.members.length?`<h4>Members</h4>${TEAM.members.map(m=>`<div class="leadrow"><div><b>${esc(m.name||m.email)}</b><div class="small muted">${esc(m.email)}</div></div><button class="btn red sm" onclick="removeMember(${m.id},'${esc(m.email)}')">Remove</button></div>`).join('')}`:''}
         ${TEAM.invites.length?`<h4>Waiting to sign up</h4>${TEAM.invites.map(i=>`<div class="leadrow"><div><b>${esc(i.email)}</b><div class="small muted">invited ${esc((i.at||'').slice(0,10))} · they should register with this email</div></div><button class="btn ghost sm" onclick="cancelInvite('${esc(i.email)}')">Cancel</button></div>`).join('')}`:''}
       </div>
@@ -643,21 +932,33 @@ async function myQrImage(){
   }catch(e){toast('Could not make the QR image: '+e.message);}}
 
 /* ============ modal ============ */
-function openModal(title,html){document.getElementById('mTitle').textContent=title;document.getElementById('mBody').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
-function closeModal(){document.getElementById('modal').classList.add('hidden');}
+function openModal(title,html,size){document.getElementById('mTitle').textContent=title;document.getElementById('mBody').innerHTML=html;
+  const m=document.getElementById('modal');m.querySelector('.modalcard').classList.toggle('wide',size==='wide');m.classList.remove('hidden');document.body.style.overflow='hidden';}
+function closeModal(){document.getElementById('modal').classList.add('hidden');document.body.style.overflow='';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+/* close "⋯" menus when tapping elsewhere */
+document.addEventListener('click',e=>{document.querySelectorAll('details.more[open]').forEach(d=>{if(!d.contains(e.target))d.removeAttribute('open');});});
 
 /* ============ leads inbox ============ */
 let LEADS=[];
 function showLeads(){hideAllViews();document.getElementById('leadsView').classList.remove('hidden');loadLeads().then(()=>api('/api/leads/seen',{method:'POST'}).then(()=>setLeadBadge(0)).catch(()=>{}));}
 function setLeadBadge(n){const b=document.getElementById('leadBadge');if(!b)return;b.textContent=n>99?'99+':n;b.classList.toggle('hidden',!n);}
-const LSTAT={new:'🆕 New',contacted:'💬 Contacted',won:'✅ Won',lost:'✖ Lost'};
+const LSTAT={new:'New',contacted:'Contacted',won:'Won',lost:'Lost'};
+/* "2026-10-04 12:58:46" (UTC) -> "5 min ago" / "3 Oct" */
+function ago(s){const t=Date.parse(String(s||'').replace(' ','T')+'Z');if(!t)return s||'';const m=Math.round((Date.now()-t)/60000);
+  if(m<1)return 'just now';if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+' h ago';const d=Math.round(h/24);if(d<7)return d+' day'+(d>1?'s':'')+' ago';
+  return new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:new Date(t).getFullYear()===new Date().getFullYear()?undefined:'numeric'});}
 async function setLead(id,patch,el){try{await api('/api/leads/'+id,{method:'PUT',body:JSON.stringify(patch)});
   if(patch.status&&el){el.className='lstat '+patch.status;const l=LEADS.find(x=>x.id===id);if(l)l.status=patch.status;}
   if(patch.notes!==undefined)toast('Note saved');}catch(e){toast(e.message);}}
 function showUsers(){hideAllViews();document.getElementById('usersView').classList.remove('hidden');loadUsers();}
+let USERS=[];
 async function loadUsers(){
-  try{const {users}=await api('/api/admin/users');
-    document.getElementById('userList').innerHTML=users.map(u=>`
+  try{USERS=(await api('/api/admin/users')).users;renderUsers();}catch(e){toast(e.message);}}
+function renderUsers(){const q=(document.getElementById('userSearch').value||'').trim().toLowerCase(),pf=document.getElementById('userPlan').value;
+  const users=USERS.filter(u=>(!q||(u.email+' '+(u.name||'')).toLowerCase().includes(q))&&(!pf||u.effective===pf));
+  document.getElementById('userCount').textContent='· '+users.length+(users.length!==USERS.length?' of '+USERS.length:'');
+  {document.getElementById('userList').innerHTML=users.length?users.map(u=>`
       <div class="leadrow"><div>
         <strong>${esc(u.name||u.email)}</strong> ${u.role==='admin'?'<span class="clickpill">Admin</span>':''}
         <div class="small muted">${esc(u.email)} · ${u.cards} card${u.cards==1?'':'s'} · joined ${esc((u.created_at||'').slice(0,10))}</div>
@@ -669,8 +970,8 @@ async function loadUsers(){
           <option value="business" ${u.effective==='business'?'selected':''}>Business</option>
         </select>
         <button class="btn red sm" onclick="delUser(${u.id},'${esc(u.email)}')">✕</button>`}
-      </div></div>`).join('');
-  }catch(e){toast(e.message);}}
+      </div></div>`).join(''):'<p class="muted center" style="padding:1rem">No users match.</p>';
+  }}
 async function setPlan(id,plan){try{await api('/api/admin/users/'+id+'/plan',{method:'PUT',body:JSON.stringify({plan})});toast('Plan updated');loadUsers();}catch(e){toast(e.message);}}
 async function delUser(id,email){if(!confirm('Delete '+email+' and ALL their cards, leads and stats? This cannot be undone.'))return;
   try{await api('/api/admin/users/'+id,{method:'DELETE'});toast('User deleted');loadUsers();}catch(e){toast(e.message);}}
@@ -684,11 +985,12 @@ async function openPricing(){
         <h3 style="margin:0">${p.label}</h3>
         <div style="font-size:1.4rem;font-weight:800;margin:.3rem 0">${p.price?('GHS '+p.price+'<span class="small muted">/yr</span>'):'GHS 0'}</div>
         <ul class="small" style="padding-left:1.1rem;margin:.4rem 0">${feat[k].map(f=>'<li>'+f+'</li>').join('')}</ul>
-        ${cur?'<div class="clickpill">Current plan</div>':(k==='free'?'':`<button class="btn sm" onclick="buyPlan('${k}')">Upgrade</button>`)}
+        ${k==='free'?(cur?'<div class="clickpill">Current plan</div>':''):cur?`<div class="clickpill">Current plan</div><button class="btn ghost sm" style="margin-top:.4rem" onclick="buyPlan('${k}')">Renew for a year</button>`
+          :(({free:0,pro:1,business:2})[k]>({free:0,pro:1,business:2})[b.current]?`<button class="btn sm" onclick="buyPlan('${k}')">Upgrade to ${p.label}</button>`:'')}
       </div>`;};
-    openModal('Choose your plan',`<div class="row" style="gap:.7rem;flex-wrap:wrap;align-items:stretch">${col('free')}${col('pro')}${col('business')}</div>
+    openModal('Choose your plan',`<div class="plans">${col('free')}${col('pro')}${col('business')}</div>
       ${b.expires&&b.current!=='free'?`<p class="small muted" style="margin-top:.6rem">Your ${b.current} plan renews/expires ${esc(b.expires.slice(0,10))}.</p>`:''}
-      <p class="small muted" style="margin-top:.4rem">Paid securely with MoMo or card via Paystack. Plans are yearly.</p>`);
+      <p class="small muted" style="margin-top:.4rem">Paid securely with MoMo or card via Paystack. Plans are yearly.</p>`,'wide');
   }catch(e){toast(e.message);}}
 async function buyPlan(plan){
   try{const r=await api('/api/billing/init',{method:'POST',body:JSON.stringify({plan})});
@@ -696,7 +998,7 @@ async function buyPlan(plan){
     if(r.manual)openModal('Upgrade to '+plan,'<p>'+esc(r.note||'')+'</p>'+(r.url?'<a class="btn" href="'+esc(r.url)+'" target="_blank" rel="noopener">Open payment page</a>':''));
   }catch(e){toast(e.message);}}
 async function loadLeads(){
-  try{const {leads}=await api('/api/leads');LEADS=leads;
+  try{const {leads}=await cachedApi('/api/leads');LEADS=leads;
     const evs=[...new Set(leads.map(l=>l.event).filter(Boolean))],sel=document.getElementById('leadFilter'),cur=sel.value;
     sel.innerHTML='<option value="">All leads</option>'+evs.map(e=>`<option value="${esc(e)}" ${e===cur?'selected':''}>📍 ${esc(e)}</option>`).join('');
     renderLeads();
@@ -707,20 +1009,20 @@ function renderLeads(){const leads=leadsShown();
       const who=[l.name,l.company].filter(Boolean).join(' · ')||'(no name)';
       const card=[l.cf,l.cl].filter(Boolean).join(' ');
       const waN=String(l.phone||'').replace(/[^\d]/g,'').replace(/^0/,'233');
-      const wa=l.phone?`<a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/${esc(waN)}?text=${encodeURIComponent('Hi '+(l.name||'')+', thanks for connecting via my HaloCard! ')}">WhatsApp</a>`:'';
-      const tel=l.phone?`<a class="btn ghost sm" href="tel:${esc(l.phone)}">Call</a>`:'';
-      const em=l.email?`<a class="btn ghost sm" href="mailto:${esc(l.email)}">Email</a>`:'';
-      return `<div class="leadrow"><div>
-        <strong>${esc(who)}</strong>
-        <div class="small muted">${esc(l.phone||'')}${l.email?' · '+esc(l.email):''}</div>
-        ${l.note?`<div class="small">“${esc(l.note)}”</div>`:''}
-        <div class="small muted">via ${esc(card||l.cslug||'card')}${l.event?' · 📍 '+esc(l.event):''} · ${esc(l.at)} UTC ${l.seen?'':'<span class="badge">NEW</span>'}</div>
-        <textarea class="lnote" rows="1" placeholder="Private note (follow-up, what they need…)" onchange="setLead(${l.id},{notes:this.value})">${esc(l.notes||'')}</textarea>
-      </div><div class="row" style="gap:.3rem;flex-wrap:wrap;justify-content:flex-end;align-content:flex-start">
-        <select class="lstat ${esc(l.status||'new')}" onchange="setLead(${l.id},{status:this.value},this)">${Object.entries(LSTAT).map(([k,v])=>`<option value="${k}" ${(l.status||'new')===k?'selected':''}>${v}</option>`).join('')}</select>
-        ${wa}${tel}${em}
-        <button class="btn red sm" onclick="delLead(${l.id})">✕</button></div></div>`;
-    }).join(''):'<p class="muted center" style="padding:1rem">No leads yet. When someone scans your card and shares their details back, they land here.</p>';
+      const wa=l.phone?`<a class="btn sm wa" target="_blank" rel="noopener" href="https://wa.me/${esc(waN)}?text=${encodeURIComponent('Hi '+(l.name||'')+', thanks for connecting via my HaloCard! ')}">WhatsApp</a>`:'';
+      const tel=l.phone?`<a class="btn ghost sm" href="tel:${esc(l.phone)}">📞 Call</a>`:'';
+      const em=l.email?`<a class="btn ghost sm" href="mailto:${esc(l.email)}">✉️ Email</a>`:'';
+      const ini=esc(((l.name||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2)||'?').toUpperCase());
+      return `<div class="lead${l.seen?'':' unread'}">
+        <div class="lead-top"><div class="ava sm">${ini}</div>
+          <div class="lead-who"><div class="ci-name">${esc(who)} ${l.seen?'':'<span class="badge">NEW</span>'}</div>
+            <div class="ci-sub">${esc(l.phone||'')}${l.email?' · '+esc(l.email):''}</div></div>
+          <select class="lstat ${esc(l.status||'new')}" onchange="setLead(${l.id},{status:this.value},this)">${Object.entries(LSTAT).map(([k,v])=>`<option value="${k}" ${(l.status||'new')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+        ${l.note?`<div class="quote">${esc(l.note)}</div>`:''}
+        <div class="lead-meta">via ${esc(card||l.cslug||'card')}${l.event?' · 📍 '+esc(l.event):''} · ${esc(ago(l.at))}</div>
+        <textarea class="lnote" rows="1" placeholder="Private note…" onchange="setLead(${l.id},{notes:this.value})">${esc(l.notes||'')}</textarea>
+        <div class="lead-act">${wa}${tel}${em}<span class="spacer"></span><button class="btn ghost sm icon" title="Delete lead" onclick="delLead(${l.id})">🗑</button></div></div>`;
+    }).join(''):`<div class="empty"><div class="e-ic">📩</div><b>No leads yet</b><p>When someone scans your card and taps “Share your details back”, they appear here — and you get an email.</p></div>`;
 }
 async function delLead(id){if(!confirm('Delete this lead?'))return;try{await api('/api/leads/'+id,{method:'DELETE'});loadLeads();}catch(e){toast(e.message);}}
 function exportLeadsCsv(){
@@ -847,12 +1149,30 @@ function parseCsv(text){ /* RFC-4180: handles quoted fields, embedded commas, ""
       if(n<3)return setTimeout(()=>tryVerify(n+1),4000);toast(d.error||'We could not confirm the payment yet — refresh in a minute.');}
       catch{if(n<3)setTimeout(()=>tryVerify(n+1),4000);}};
     tryVerify(0);}
+  await loadVersion();
   try{const {cards}=await api('/api/cards');
-    if(!cards.length){toast('Welcome! Let\u2019s design your first card ✨');newCard();return;}
+    if(!cards.length&&ME.role!=='admin'){try{localStorage.setItem('hc_seen_version',APPV.version||'');}catch{}toast('Welcome! Let\u2019s design your first card ✨');newCard();return;}
   }catch{}
-  showDash();
+  const view=q.get('view');
+  if(view==='leads')showLeads();else if(ME.role==='admin'&&!view)showAdmin();else showDash();
+  if(view)history.replaceState(null,'','/app');
+  if(!ref)setTimeout(maybeWhatsNew,700);
 }})();
 </script>
-<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}</script>
+<div id="updBar" class="updbar hidden"><span>✨ A new version of HaloCard is ready.</span><button class="btn sm" id="updBtn">Refresh</button></div>
+<script>
+/* PWA: register the service worker and offer a one-tap refresh when a new version is installed */
+if("serviceWorker" in navigator){window.addEventListener("load",function(){
+  navigator.serviceWorker.register("/sw.js").then(function(reg){
+    function ready(w){if(!w||!navigator.serviceWorker.controller)return;var bar=document.getElementById('updBar');bar.classList.remove('hidden');
+      document.getElementById('updBtn').onclick=function(){bar.querySelector('span').textContent='Updating…';w.postMessage({type:'SKIP_WAITING'});};}
+    if(reg.waiting)ready(reg.waiting);
+    reg.addEventListener('updatefound',function(){var w=reg.installing;w&&w.addEventListener('statechange',function(){if(w.state==='installed')ready(w);});});
+    setInterval(function(){reg.update().catch(function(){});},30*60*1000);           /* check for updates every 30 min */
+    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')reg.update().catch(function(){});});
+  }).catch(function(){});
+  var reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(reloaded)return;reloaded=true;location.reload();});
+});}
+</script>
 </body>
 </html>
