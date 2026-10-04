@@ -468,6 +468,14 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
 .lmsg.ok{color:#1f7a4d;padding:.8rem 0}
 .lmsg.err{color:#b23a2a}
 .foot{text-align:center;color:#8f8570;font-size:.8rem;margin-top:1.4rem}
+.savetip{position:fixed;inset:0;background:rgba(23,20,16,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50;padding:12px}
+.savetip[hidden]{display:none}
+.savetip-card{background:#fffdf8;border-radius:18px;max-width:440px;width:100%;padding:1.1rem 1.1rem .8rem;box-shadow:0 -6px 30px rgba(0,0,0,.25);border-top:5px solid var(--accent)}
+.savetip-h{font-weight:800;font-size:1.1rem;margin-bottom:.4rem;color:var(--ink)}
+.savetip-b{font-size:.95rem;line-height:1.45;color:#3b352c;margin-bottom:.45rem}
+.savetip-b.small{font-size:.83rem;color:#6b6256}
+.savetip .save{width:100%;border:none;cursor:pointer;font-family:inherit}
+.savetip-x{display:block;margin:.5rem auto 0;background:none;border:none;color:#8f8570;font-weight:700;font-family:inherit;font-size:.9rem;cursor:pointer}
 .foot b{color:var(--accent)}
 </style></head>
 <body>
@@ -499,19 +507,39 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
   </div></div>
   <div style="padding:16px 26px 0">${kenteBand("bot").replace('class="kente-band"','class="kente-band slim"')}</div>
 </div>
+<div id="saveTip" class="savetip" hidden>
+  <div class="savetip-card">
+    <div class="savetip-h">&#128241; Almost done</div>
+    <div class="savetip-b">Your phone downloaded <b>${esc(fullName(c) || "the contact")}</b>'s details.<br>
+      Tap <b>Open</b> on the download message at the bottom of the screen (or open the file from your notifications), then tap <b>Save</b>.</div>
+    <div class="savetip-b small">Tip: next time, point your phone camera at the QR on the <b>back</b> of the card &mdash; it adds the contact in one step.</div>
+    <button type="button" class="save" id="saveAgain" style="margin-top:.6rem">&#11015; Download again</button>
+    <button type="button" class="savetip-x" id="saveTipX">Close</button>
+  </div>
+</div>
 <script>
 /* Save to Contacts, as seamless as each phone allows:
-   Android -> opens the phone's own "Create contact" screen pre-filled (falls back to the vCard)
-   iPhone  -> the vCard is served inline, so iOS shows the contact card with "Create New Contact"
+   iPhone  -> vCard served inline: iOS shows the contact card with "Create New Contact" (no download)
+   Android -> try the phone's own pre-filled "Create contact" screen; if the phone doesn't allow that
+              from a web page, Chrome downloads the vCard and we show a 1-step guide
    desktop -> downloads the .vcf */
 (function(){
-  var s=document.getElementById('saveBtn'); if(!s) return;
+  var s=document.getElementById('saveBtn'), tip=document.getElementById('saveTip'); if(!s) return;
+  var vcf=s.getAttribute('href');
+  function showTip(){ tip.hidden=false; }
+  document.getElementById('saveTipX').onclick=function(){ tip.hidden=true; };
+  document.getElementById('saveAgain').onclick=function(){ location.href=vcf; };
   s.addEventListener('click',function(e){
-    if(/Android/i.test(navigator.userAgent) && s.dataset.intent){
-      e.preventDefault();
-      try{ navigator.sendBeacon('/api/public/saved', new Blob([JSON.stringify({slug:${JSON.stringify(c.slug)}})],{type:'application/json'})); }catch(_){}
-      location.href = s.dataset.intent;
-    }
+    if(!/Android/i.test(navigator.userAgent) || !s.dataset.intent) return; /* iPhone & desktop: normal link */
+    e.preventDefault();
+    try{ navigator.sendBeacon('/api/public/saved', new Blob([JSON.stringify({slug:${JSON.stringify(c.slug)}})],{type:'application/json'})); }catch(_){}
+    var left=false; function gone(){ if(document.visibilityState==='hidden') left=true; }
+    document.addEventListener('visibilitychange',gone);
+    location.href = s.dataset.intent;               /* opens Contacts if the phone allows it… */
+    setTimeout(function(){                           /* …otherwise Chrome fell back to downloading the vCard */
+      document.removeEventListener('visibilitychange',gone);
+      if(!left) showTip();
+    },1600);
   });
 })();
 </script>
