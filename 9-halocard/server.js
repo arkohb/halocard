@@ -16,7 +16,16 @@ import { DatabaseSync } from "node:sqlite";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const AUTH_SECRET = process.env.AUTH_SECRET || "change-me-halocard-secret";
-const APP_URL = process.env.APP_URL || "";
+/* APP_URL goes inside every QR code, so it must be a full https:// link —
+   without the scheme, phone scanners show the text with "Copy" instead of an "Open" link */
+function normalizeAppUrl(v) {
+  v = String(v || "").trim().replace(/\/+$/, "");
+  if (!v) return "";
+  if (!/^https?:\/\//i.test(v)) v = "https://" + v;
+  if (/^http:\/\//i.test(v) && !/^http:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/i.test(v)) v = "https://" + v.slice(7);
+  return v;
+}
+const APP_URL = normalizeAppUrl(process.env.APP_URL);
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "admin@halocard.app").toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
@@ -231,7 +240,13 @@ function readRaw(req) {
 }
 const jread = async (req) => { try { return JSON.parse((await readBody(req)) || "{}"); } catch { return {}; } };
 function json(res, code, obj) { if (res.writableEnded || res.destroyed) return; try { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); } catch {} }
-function baseUrl(req) { return APP_URL || ((req.headers["x-forwarded-proto"] || "http") + "://" + (req.headers.host || "")); }
+function baseUrl(req) {
+  if (APP_URL) return APP_URL;
+  const host = String(req.headers.host || "");
+  const local = /^(localhost|127\.|0\.0\.0\.0|\[::1\])/i.test(host);
+  const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() || (local ? "http" : "https");
+  return proto + "://" + host;
+}
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function slugify(first, last) {
   const base = (String(first || "") + "-" + String(last || "")).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "card";
