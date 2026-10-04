@@ -21,6 +21,17 @@
 .sigbox{width:100%;min-height:130px;font-family:monospace;font-size:.78rem;border:1.5px solid #e6dcc6;border-radius:10px;padding:.6rem}
 .clickgrid{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0}
 .clickpill{background:#f3ecd9;border-radius:999px;padding:.25rem .7rem;font-size:.82rem;font-weight:700}
+.probadge{display:inline-block;background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410;font-size:.68rem;font-weight:800;border-radius:999px;padding:.12rem .5rem;vertical-align:middle;margin-left:.35rem}
+.hgrid{display:grid;grid-template-columns:3.2rem 1fr 1fr 4.6rem;gap:.35rem .5rem;align-items:center;font-size:.9rem}
+.hgrid input[type=time]{padding:.4rem}
+.mrow{display:grid;grid-template-columns:1fr 6rem 2.2rem;gap:.4rem;margin-bottom:.35rem}
+.mrow .mdesc{grid-column:1/-1}
+.badge{display:inline-block;min-width:1.2rem;padding:0 .35rem;margin-left:.3rem;border-radius:999px;background:#c0392b;color:#fff;font-size:.72rem;font-weight:800;line-height:1.2rem;text-align:center}
+.lstat{padding:.35rem;border-radius:8px;border:1.5px solid #e6dcc6;font-weight:700;font-size:.82rem}
+.lstat.new{background:#fff4d6}.lstat.contacted{background:#e6f0fb}.lstat.won{background:#e3f4ea}.lstat.lost{background:#f3e3df}
+.lnote{width:100%;margin-top:.35rem;border:1.5px dashed #e6dcc6;border-radius:8px;padding:.35rem .5rem;font-size:.85rem;font-family:inherit;background:#fdfaf2}
+.ostat{font-weight:800;font-size:.78rem;border-radius:999px;padding:.15rem .55rem;background:#f3ecd9}
+.ostat.paid,.ostat.printing{background:#fff4d6}.ostat.shipped{background:#e6f0fb}.ostat.delivered{background:#e3f4ea}.ostat.cancelled{background:#f3e3df}
 </style>
 <script src="/vendor/qrcode.js"></script>
 <script src="/vendor/jspdf.umd.min.js"></script>
@@ -31,10 +42,13 @@
   <span id="greet" class="small" style="color:#a99e8a;margin-left:.4rem"></span>
   <div class="spacer"></div>
   <button class="btn ghost sm" id="navCards" style="color:#fdf6e6;border-color:#4a443a" onclick="showDash()">My cards</button>
-  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="showLeads()">Leads</button>
+  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="showLeads()">Leads<span id="leadBadge" class="badge hidden"></span></button>
+  <button class="btn ghost sm admin-only hidden" style="color:#fdf6e6;border-color:#4a443a" onclick="showOrders()">Orders</button>
+  <button class="btn ghost sm hidden" id="navTeam" style="color:#fdf6e6;border-color:#4a443a" onclick="showTeam()">Team</button>
+  <button class="btn ghost sm" style="color:#f2c14e;border-color:#4a443a" onclick="openReferral()">🎁 Invite</button>
   <button class="btn ghost sm admin-only hidden" style="color:#fdf6e6;border-color:#4a443a" onclick="showUsers()">Users</button>
   <button class="btn sm hidden" id="upgradeBtn" style="background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410" onclick="openPricing()">⭐ Upgrade</button>
-  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" title="Change password" onclick="openPwd()">🔑</button>
+  <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" title="Account" onclick="openAccount()">⚙️</button>
   <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="logout()">Sign out</button>
 </header>
 
@@ -52,13 +66,33 @@
       </div>
     </div>
     <div class="card" id="cardList"></div>
+    <div class="card" style="margin-top:.9rem;display:flex;gap:.9rem;align-items:center;flex-wrap:wrap;background:linear-gradient(135deg,#171410,#2c251a);color:#fdf6e6;border:none">
+      <div style="font-size:2.2rem">📇</div>
+      <div style="flex:1;min-width:200px"><strong style="color:#f2c14e">Get a physical NFC HaloCard</strong>
+        <div class="small" style="color:#cfc3a8">Tap it on any phone to open your card — kente PVC or black &amp; gold metal, delivered in Ghana.</div></div>
+      <button class="btn sm" style="background:linear-gradient(135deg,#f2c14e,#d99b16);color:#171410" onclick="openNfcShop()">Order NFC card</button>
+      <button class="btn ghost sm" style="color:#fdf6e6;border-color:#4a443a" onclick="myOrders()">My orders</button>
+    </div>
+  </div>
+
+  <!-- TEAM (Business) -->
+  <div id="teamView" class="hidden">
+    <h2 style="margin:0 0 .4rem">Team <span class="probadge">BUSINESS</span></h2>
+    <div id="teamBody"><p class="muted center" style="padding:1rem">Loading…</p></div>
+  </div>
+
+  <!-- ADMIN: NFC ORDERS -->
+  <div id="ordersView" class="hidden">
+    <h2 style="margin:0 0 .4rem">NFC card orders</h2>
+    <div class="card" id="orderList"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
 
   <!-- LEADS INBOX -->
   <div id="leadsView" class="hidden">
     <div class="row" style="justify-content:space-between;margin:0 0 .4rem">
       <h2 style="margin:0">Leads inbox</h2>
-      <button class="btn ghost sm" onclick="exportLeadsCsv()">Export CSV</button>
+      <div class="row" style="gap:.4rem"><select id="leadFilter" onchange="renderLeads()" style="padding:.4rem;border-radius:8px;border:1.5px solid #e6dcc6"><option value="">All leads</option></select>
+      <button class="btn ghost sm" onclick="exportLeadsCsv()">Export CSV</button></div>
     </div>
     <div class="card" id="leadList"><p class="muted center" style="padding:1rem">Loading…</p></div>
   </div>
@@ -77,6 +111,7 @@
       <div>
         <div class="card">
           <h3 style="margin-top:0">Contact details</h3>
+          <div id="teamLock" class="small hidden" style="background:#fff4d6;border-radius:10px;padding:.5rem .7rem;margin-bottom:.6rem">🏢 Company name, logo, colours and design are set by your company's team brand.</div>
           <div class="grid cols-3">
             <div><label>First name *</label><input id="f_first" oninput="draw()"></div>
             <div><label>Middle</label><input id="f_middle" oninput="draw()"></div>
@@ -148,7 +183,35 @@
           <div class="row" style="margin-top:.6rem;gap:.4rem">
             <button class="btn ghost sm" onclick="copyLink()">Copy link</button>
             <button class="btn ghost sm" onclick="writeNfc()">Write to NFC card</button>
+            <button class="btn ghost sm" onclick="myQrImage()">📱 Save QR to phone</button>
+            <button class="btn ghost sm hidden" id="gwBtn" onclick="addToGoogleWallet()">Add to Google Wallet</button>
           </div>
+        </div>
+
+        <div class="card" style="margin-top:.8rem">
+          <h3 style="margin-top:0">Business profile <span class="probadge">PRO</span></h3>
+          <div class="small muted" style="margin-bottom:.4rem">These show on your live card for Pro &amp; Business plans.</div>
+          <div class="grid cols-2">
+            <div><label>Profile theme</label><select id="x_theme"><option value="kente">Kente (classic)</option><option value="adinkra">Adinkra (cream &amp; gold)</option><option value="executive">Executive (black &amp; gold)</option></select></div>
+            <div><label>WhatsApp greeting message</label><input id="x_wa_message" placeholder="Hi! I got your card and I'd like to…"></div>
+            <div><label>Booking link</label><input id="x_booking_url" placeholder="https://calendly.com/… or any booking page"></div>
+            <div><label>Google review link</label><input id="x_review_url" placeholder="https://g.page/r/…/review"></div>
+            <div><label>Map / directions link</label><input id="x_maps_url" placeholder="Google Maps link (optional — uses your address otherwise)"></div>
+            <div><label>Intro video</label><input id="x_video_url" placeholder="YouTube, TikTok or Instagram link"></div>
+          </div>
+          <label style="margin-top:.7rem">Event mode <span class="small muted">— shows “Meet me at…” on your card and tags new leads with the event</span></label>
+          <div class="grid cols-3">
+            <div><input id="x_event_name" placeholder="Event (e.g. Ghana Trade Fair)"></div>
+            <div><input id="x_event_place" placeholder="Stand / place (e.g. Hall B, Stand 12)"></div>
+            <div><input id="x_event_until" type="date" title="Event ends (auto turns off after this day)"></div>
+          </div>
+          <label style="margin-top:.7rem">Opening hours <span class="small muted">(Ghana time)</span></label>
+          <div class="hgrid" id="hoursGrid"></div>
+          <div class="row" style="justify-content:space-between;margin-top:.8rem"><label style="margin:0">Products &amp; services</label>
+            <button class="btn ghost sm" onclick="addMenuRow()">+ Add item</button></div>
+          <input id="x_menu_title" placeholder="Section title (e.g. Our services, Price list)" style="margin:.35rem 0">
+          <div id="menuRows"></div>
+          <div class="small muted">Each item gets an “Order on WhatsApp” button, plus “Pay” when you have a payment link.</div>
         </div>
       </div>
 
@@ -197,6 +260,16 @@ const HDRS={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
 const api=(p,o={})=>fetch(p,{...o,headers:{...HDRS,...(o.headers||{})}}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok){if(d.upgrade)setTimeout(openPricing,600);throw new Error(d.error||'error');}return d;});
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.add('hidden'),3500);}
 function logout(){localStorage.removeItem('hc_token');location.href='/login';}
+function openAccount(){openModal('Account',`
+  <label>Your name</label><input id="acc_name" value="${esc(ME.name||'')}">
+  <label class="row" style="gap:.5rem;align-items:center;margin-top:.7rem;font-weight:600"><input type="checkbox" id="acc_rep" style="width:auto" ${ME.report_opt_out?'':'checked'}> Email me a monthly scan report</label>
+  <div class="row" style="gap:.4rem;margin-top:.6rem"><button class="btn sm" onclick="saveAccount()">Save</button>
+    <button class="btn ghost sm" onclick="testReport()" ${ME.email_on?'':'disabled title="Email not set up yet"'}>Send me a report now</button>
+    <button class="btn ghost sm" onclick="openPwd()">Change password</button></div>
+  <p class="small muted" style="margin-top:.6rem">Signed in as ${esc(ME.email)} · plan: ${esc(ME.plan)}${ME.plan_expires?' until '+esc(ME.plan_expires.slice(0,10)):''}${ME.team_member?' · team: '+esc(ME.team_member.company||ME.team_member.name||''):''}</p>`);}
+async function saveAccount(){try{await api('/api/me/prefs',{method:'PUT',body:JSON.stringify({name:document.getElementById('acc_name').value,report_opt_out:!document.getElementById('acc_rep').checked})});
+  ME=await api('/api/me');applyRole();closeModal();toast('Saved');}catch(e){toast(e.message);}}
+async function testReport(){try{await api('/api/report/test',{method:'POST'});toast('Report sent to '+ME.email);}catch(e){toast(e.message);}}
 function openPwd(){openModal('Change password',`
   <label>New password (6+ characters)</label><input id="npw" type="password" placeholder="••••••••">
   <button class="btn sm" style="margin-top:.7rem" onclick="savePwd()">Update password</button>`);}
@@ -212,13 +285,15 @@ let ME={role:'user'};
 async function guard(){if(!token){location.href='/login';return false;}try{ME=await api('/api/me');APP_URL=ME.app_url;applyRole();}catch{localStorage.removeItem('hc_token');location.href='/login';return false;}return true;}
 function applyRole(){const admin=ME.role==='admin';document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!admin));
   const g=document.getElementById('greet');if(g)g.textContent=(ME.name?ME.name.split(' ')[0]:ME.email.split('@')[0])+(admin?' · Admin':' · '+(ME.plan==='free'?'Free':ME.plan==='pro'?'Pro ⭐':'Business 👑'));
-  document.getElementById('upgradeBtn').classList.toggle('hidden',admin||ME.plan==='business');}
+  document.getElementById('upgradeBtn').classList.toggle('hidden',admin||ME.plan==='business');
+  document.getElementById('navTeam').classList.toggle('hidden',!(ME.team_owner||(ME.plan==='business'&&!ME.team_member)));
+  document.getElementById('gwBtn').classList.toggle('hidden',!ME.wallet_google);}
 
 /* ============ dashboard ============ */
-function hideAllViews(){for(const id of ['editor','leadsView','usersView','dash'])document.getElementById(id).classList.add('hidden');}
+function hideAllViews(){for(const id of ['editor','leadsView','usersView','dash','ordersView','teamView'])document.getElementById(id).classList.add('hidden');}
 function showDash(){hideAllViews();document.getElementById('dash').classList.remove('hidden');loadDash();}
 async function loadDash(){
-  const o=await api('/api/overview');APP_URL=o.app_url;
+  const o=await api('/api/overview');APP_URL=o.app_url;setLeadBadge(o.leads_new);
   document.getElementById('metrics').innerHTML=`
     <div class="stat"><div class="k">Total cards</div><div class="v">${o.total}</div></div>
     <div class="stat"><div class="k">Active</div><div class="v" style="color:var(--k-green)">${o.active}</div></div>
@@ -247,8 +322,9 @@ async function delCard(id){if(!confirm('Delete this card? The QR will stop worki
 
 /* ============ editor ============ */
 function newCard(){EDIT_ID=null;CARD={template:'corporate',accent:'#d99b16',photo:null,logo:null};fillForm({});openEditor();}
-async function editCard(id){const {card}=await api('/api/cards/'+id);EDIT_ID=id;CARD={slug:card.slug,template:card.template||'corporate',accent:card.accent||'#d99b16',photo:card.photo,logo:card.logo};fillForm(card);openEditor();}
-function openEditor(){hideAllViews();document.getElementById('editor').classList.remove('hidden');renderTpl();renderSwatches();SIDE='front';setSideBtns();draw();}
+async function editCard(id){const {card}=await api('/api/cards/'+id);EDIT_ID=id;CARD={slug:card.slug,template:card.template||'corporate',accent:card.accent||'#d99b16',photo:card.photo,logo:card.logo,team_id:card.team_id};fillForm(card);openEditor();}
+function openEditor(){hideAllViews();document.getElementById('editor').classList.remove('hidden');
+  const locked=!!(CARD.team_id||ME.team_member);document.getElementById('teamLock').classList.toggle('hidden',!locked);document.getElementById('f_company').disabled=locked;renderTpl();renderSwatches();SIDE='front';setSideBtns();draw();}
 const FORM_FIELDS=['first','middle','last','job_title','company','mobile','secondary','email','website','address','city','country','linkedin','x_twitter','facebook','instagram','whatsapp','tiktok','snapchat','payment_url','payment_label','slogan'];
 function fillForm(c){
   document.getElementById('f_first').value=c.first_name||'';
@@ -257,7 +333,30 @@ function fillForm(c){
   for(const f of FORM_FIELDS){const el=document.getElementById('f_'+f);if(el&&!['first','middle','last'].includes(f))el.value=c[f]||'';}
   document.getElementById('f_slug').value=c.slug||'';
   setImg('photo',CARD.photo);setImg('logo',CARD.logo);
+  let x={};try{x=typeof c.extras==='string'?JSON.parse(c.extras||'{}'):(c.extras||{});}catch{x={};}
+  for(const k of ['wa_message','booking_url','review_url','maps_url','video_url','menu_title','event_name','event_place','event_until'])document.getElementById('x_'+k).value=x[k]||'';
+  document.getElementById('x_theme').value=x.theme||'kente';
+  renderHours(x.hours||{});
+  document.getElementById('menuRows').innerHTML='';(x.menu||[]).forEach(addMenuRow);
 }
+/* ---- opening hours editor ---- */
+const DAYS=[['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+function renderHours(h){document.getElementById('hoursGrid').innerHTML=DAYS.map(([d,l])=>{const e=h[d]||{};
+  return `<span>${l}</span><input type="time" id="h_${d}_o" value="${esc(e.o||'')}"><input type="time" id="h_${d}_c" value="${esc(e.c||'')}">
+    <label class="small" style="margin:0;display:flex;gap:.25rem;align-items:center"><input type="checkbox" id="h_${d}_x" ${e.closed?'checked':''} style="width:auto"> Closed</label>`;}).join('')
+  +`<span></span><button class="btn ghost sm" style="grid-column:2/-1" onclick="copyMonday()">Copy Monday to Tue–Fri</button>`;}
+function copyMonday(){const o=document.getElementById('h_mon_o').value,c=document.getElementById('h_mon_c').value;
+  for(const d of ['tue','wed','thu','fri']){document.getElementById('h_'+d+'_o').value=o;document.getElementById('h_'+d+'_c').value=c;document.getElementById('h_'+d+'_x').checked=false;}}
+/* ---- products & services editor ---- */
+function addMenuRow(it){it=it&&it.name!==undefined?it:{};const d=document.createElement('div');d.className='mrow';
+  d.innerHTML=`<input class="mname" placeholder="Item / service" value="${esc(it.name||'')}"><input class="mprice" inputmode="decimal" placeholder="GHS" value="${it.price!=null?esc(it.price):''}">
+    <button class="btn red sm" title="Remove" onclick="this.parentElement.remove()">✕</button>
+    <input class="mdesc" placeholder="Short description (optional)" value="${esc(it.desc||'')}">`;
+  document.getElementById('menuRows').appendChild(d);}
+function collectExtras(){const v=id=>document.getElementById(id).value.trim();const hours={};
+  for(const [d] of DAYS)hours[d]={o:v('h_'+d+'_o'),c:v('h_'+d+'_c'),closed:document.getElementById('h_'+d+'_x').checked};
+  const menu=[...document.querySelectorAll('#menuRows .mrow')].map(r=>({name:r.querySelector('.mname').value.trim(),price:r.querySelector('.mprice').value.trim(),desc:r.querySelector('.mdesc').value.trim()})).filter(m=>m.name);
+  return {theme:v('x_theme'),wa_message:v('x_wa_message'),booking_url:v('x_booking_url'),review_url:v('x_review_url'),maps_url:v('x_maps_url'),video_url:v('x_video_url'),menu_title:v('x_menu_title'),event_name:v('x_event_name'),event_place:v('x_event_place'),event_until:v('x_event_until'),hours,menu};}
 function collect(){
   const g=id=>document.getElementById(id).value.trim();
   return {first_name:g('f_first'),middle_name:g('f_middle'),last_name:g('f_last'),
@@ -265,7 +364,8 @@ function collect(){
     email:g('f_email'),website:g('f_website'),address:g('f_address'),city:g('f_city'),country:g('f_country'),
     linkedin:g('f_linkedin'),x_twitter:g('f_x_twitter'),facebook:g('f_facebook'),instagram:g('f_instagram'),whatsapp:g('f_whatsapp'),tiktok:g('f_tiktok'),snapchat:g('f_snapchat'),
     payment_url:g('f_payment_url'),payment_label:g('f_payment_label'),
-    slogan:g('f_slogan'),template:CARD.template,accent:CARD.accent,photo:CARD.photo||null,logo:CARD.logo||null};
+    slogan:g('f_slogan'),template:CARD.template,accent:CARD.accent,photo:CARD.photo||null,logo:CARD.logo||null,
+    extras:collectExtras()};
 }
 function renderTpl(){document.getElementById('tplRow').innerHTML=TEMPLATES.map(t=>`<div class="tpl ${t===CARD.template?'on':''}" onclick="pickTpl('${t}')">${t[0].toUpperCase()+t.slice(1)}</div>`).join('');}
 function pickTpl(t){CARD.template=t;renderTpl();draw();}
@@ -395,13 +495,165 @@ async function writeNfc(){
     toast('✓ NFC card written — tap it on any phone to test');}
   catch(e){toast('NFC write failed: '+(e.message||e));}}
 
+/* ============ physical NFC cards ============ */
+let NFC=null;
+async function openNfcShop(){
+  try{NFC=await api('/api/nfc/products');const {cards}=await api('/api/cards');
+    if(!cards.length){toast('Create and save a card first');return;}
+    const p=NFC.products;
+    openModal('Order a physical NFC card',`
+      <p class="small muted" style="margin-top:0">Tap the card on any phone and it opens your HaloCard — no app needed. We print your name and a QR on it too.</p>
+      <div class="row" style="gap:.6rem;flex-wrap:wrap">
+        ${Object.entries(p).map(([k,v],i)=>`<label class="card" style="flex:1;min-width:150px;cursor:pointer;margin:0">
+          <input type="radio" name="nmat" value="${k}" ${i?'':'checked'} onchange="nfcTotal()" style="width:auto"> <b>${esc(v.label)}</b>
+          <div style="font-size:1.25rem;font-weight:800;margin-top:.2rem">GHS ${v.price}</div></label>`).join('')}
+      </div>
+      <div class="grid cols-2" style="margin-top:.5rem">
+        <div><label>Which card?</label><select id="n_card">${cards.map(c=>`<option value="${c.id}">${esc([c.first_name,c.last_name].filter(Boolean).join(' ')||c.slug)}</option>`).join('')}</select></div>
+        <div><label>Quantity</label><input id="n_qty" type="number" min="1" max="50" value="1" oninput="nfcTotal()"></div>
+        <div><label>Name printed on card</label><input id="n_name" placeholder="as it should appear"></div>
+        <div><label>Delivery phone</label><input id="n_phone" inputmode="tel" placeholder="024…"></div>
+        <div><label>Delivery address / landmark</label><input id="n_addr"></div>
+        <div><label>City / town</label><input id="n_city"></div>
+        <div><label>Region</label><input id="n_region" placeholder="e.g. Ashanti"></div>
+        <div><label>Note (optional)</label><input id="n_note"></div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:.8rem;align-items:center">
+        <div><span class="small muted">Total</span><div id="n_total" style="font-size:1.4rem;font-weight:800"></div></div>
+        <button class="btn green" onclick="placeNfcOrder()">${NFC.online?'Pay with MoMo / card':'Place order'}</button>
+      </div>`);
+    nfcTotal();
+  }catch(e){toast(e.message);}}
+function nfcTotal(){const m=(document.querySelector('input[name=nmat]:checked')||{}).value;const q=Math.max(1,+document.getElementById('n_qty').value||1);
+  const t=(NFC.products[m]?.price||0)*q+(NFC.delivery||0);document.getElementById('n_total').textContent='GHS '+t.toLocaleString()+(NFC.delivery?' (incl. GHS '+NFC.delivery+' delivery)':'');}
+async function placeNfcOrder(){
+  const v=id=>document.getElementById(id).value.trim();
+  try{const r=await api('/api/nfc/order',{method:'POST',body:JSON.stringify({material:(document.querySelector('input[name=nmat]:checked')||{}).value,
+      card_id:+v('n_card'),qty:+v('n_qty'),name_on_card:v('n_name'),phone:v('n_phone'),address:v('n_addr'),city:v('n_city'),region:v('n_region'),note:v('n_note')})});
+    if(r.url){location.href=r.url;return;}
+    closeModal();toast(r.note||'Order placed');setTimeout(myOrders,800);
+  }catch(e){toast(e.message);}}
+const OSTAT={awaiting_payment:'Awaiting payment',paid:'Paid',printing:'Printing',shipped:'On the way',delivered:'Delivered',cancelled:'Cancelled'};
+async function myOrders(){try{const d=await api('/api/nfc/products');
+  openModal('My NFC card orders',d.orders.length?d.orders.map(o=>`<div class="leadrow"><div><strong>#${o.id} · ${o.qty} × ${esc(d.products[o.material]?.label||o.material)}</strong>
+    <div class="small muted">${esc(o.name_on_card||'')} · GHS ${o.amount} · ${esc((o.at||'').slice(0,10))}</div>
+    ${o.tracking?`<div class="small">Tracking: ${esc(o.tracking)}</div>`:''}</div><span class="ostat ${esc(o.status)}">${OSTAT[o.status]||esc(o.status)}</span></div>`).join('')
+    :'<p class="muted">No orders yet.</p><button class="btn sm" onclick="openNfcShop()">Order your first NFC card</button>');
+  }catch(e){toast(e.message);}}
+function showOrders(){hideAllViews();document.getElementById('ordersView').classList.remove('hidden');loadOrders();}
+async function loadOrders(){try{const {orders,app_url}=await api('/api/admin/orders');
+  document.getElementById('orderList').innerHTML=orders.length?orders.map(o=>`<div class="leadrow"><div>
+      <strong>#${o.id} · ${o.qty} × ${esc(o.material)} · GHS ${o.amount}</strong> <span class="ostat ${esc(o.status)}">${OSTAT[o.status]||esc(o.status)}</span>
+      <div class="small">Print: <b>${esc(o.name_on_card||'')}</b> · NFC link: <code>${esc((app_url||'')+'/c/'+(o.slug||''))}</code></div>
+      <div class="small muted">${esc(o.email||'')} · ${esc(o.phone||'')} · ${esc([o.address,o.city,o.region].filter(Boolean).join(', '))}</div>
+      ${o.note?`<div class="small">“${esc(o.note)}”</div>`:''}<div class="small muted">${esc(o.at)} UTC${o.reference?' · ref '+esc(o.reference):''}</div>
+    </div><div style="display:flex;flex-direction:column;gap:.3rem;min-width:9rem">
+      <select onchange="setOrder(${o.id},{status:this.value})" style="padding:.35rem;border-radius:8px;border:1.5px solid #e6dcc6">${Object.entries(OSTAT).map(([k,v])=>`<option value="${k}" ${o.status===k?'selected':''}>${v}</option>`).join('')}</select>
+      <input placeholder="Tracking / rider" value="${esc(o.tracking||'')}" onchange="setOrder(${o.id},{tracking:this.value})" style="padding:.35rem;font-size:.82rem">
+    </div></div>`).join(''):'<p class="muted center" style="padding:1rem">No orders yet.</p>';
+  }catch(e){toast(e.message);}}
+async function setOrder(id,patch){try{await api('/api/admin/orders/'+id,{method:'PUT',body:JSON.stringify(patch)});toast('Order updated');loadOrders();}catch(e){toast(e.message);}}
+
+/* ============ referrals ============ */
+async function openReferral(){try{const r=await api('/api/referrals');
+  const msg='I use HaloCard for my digital business card — QR + NFC, MoMo payments and WhatsApp. Create yours free: '+r.link;
+  openModal('Invite friends, earn free Pro',`
+    <p style="margin-top:0">Share your link. When someone you invite upgrades, you get <b>${r.days_per_reward} days of Pro free</b>${ME.plan!=='free'?' (added to your plan)':''}.</p>
+    <div class="linkbox" style="word-break:break-all">${esc(r.link)}</div>
+    <div class="row" style="gap:.4rem;margin-top:.6rem;flex-wrap:wrap">
+      <button class="btn sm" onclick="navigator.clipboard.writeText('${esc(r.link)}').then(()=>toast('Link copied'))">Copy link</button>
+      <a class="btn sm" style="background:#25D366;color:#fff" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">Share on WhatsApp</a></div>
+    <div class="metricGrid" style="margin-top:.9rem">
+      <div class="stat"><div class="k">Signed up</div><div class="v">${r.signups}</div></div>
+      <div class="stat"><div class="k">Upgraded</div><div class="v" style="color:var(--k-green)">${r.paid}</div></div>
+      <div class="stat"><div class="k">Free days earned</div><div class="v" style="color:var(--k-gold)">${r.days_earned}</div></div></div>
+    <p class="small muted">Your code: <b>${esc(r.code)}</b></p>`);}catch(e){toast(e.message);}}
+
+/* ============ Google Wallet ============ */
+async function addToGoogleWallet(){if(!await ensureSaved())return;try{const r=await api('/api/cards/'+EDIT_ID+'/wallet/google');window.open(r.url,'_blank','noopener');}catch(e){toast(e.message);}}
+
+/* ============ team (Business) ============ */
+let TEAM=null,TEAMLOGO=undefined;
+function showTeam(){hideAllViews();document.getElementById('teamView').classList.remove('hidden');loadTeam();}
+async function loadTeam(){const el=document.getElementById('teamBody');
+  try{TEAM=await api('/api/team');TEAMLOGO=undefined;
+    if(!TEAM.owner){el.innerHTML=TEAM.member?`<div class="card"><p>You're part of <b>${esc(TEAM.member.company||TEAM.member.name||'a company')}</b>'s team (managed by ${esc(TEAM.member.owner)}). Your card uses the company brand.</p></div>`
+      :TEAM.eligible?`<div class="card"><h3 style="margin-top:0">Create your company team</h3><p class="muted">Give every staff member a matching HaloCard with your logo, colours and design. You see all their scans and leads in one place.</p>${teamBrandForm({})}</div>`
+      :`<div class="card"><p>Teams are part of the <b>Business</b> plan: one brand for all staff cards, staff added by email, every lead in one inbox.</p><button class="btn sm" onclick="openPricing()">See Business plan</button></div>`;return;}
+    const t=TEAM.team,used=TEAM.members.length+TEAM.invites.length+1;
+    const rows=TEAM.cards.map(c=>`<tr><td><b>${esc([c.first_name,c.last_name].filter(Boolean).join(' '))}</b><div class="small muted">${esc(c.job_title||'')}</div></td>
+      <td class="small">${esc(c.email||'')}</td><td>${c.scan_count}</td><td>${c.vcard_downloads}</td><td>${c.leads}</td>
+      <td>${c.active?'✅':'⏸'}</td><td class="row" style="gap:.25rem"><a class="btn ghost sm" href="/c/${esc(c.slug)}" target="_blank">Open</a><button class="btn ghost sm" onclick="editCard(${c.id})">Edit</button></td></tr>`).join('');
+    el.innerHTML=`<div class="metricGrid">
+        <div class="stat"><div class="k">People</div><div class="v">${used} / ${TEAM.seats}</div></div>
+        <div class="stat"><div class="k">Scans</div><div class="v" style="color:var(--accent)">${TEAM.cards.reduce((s,c)=>s+c.scan_count,0)}</div></div>
+        <div class="stat"><div class="k">Saved</div><div class="v" style="color:var(--k-green)">${TEAM.cards.reduce((s,c)=>s+c.vcard_downloads,0)}</div></div>
+        <div class="stat" style="cursor:pointer" onclick="showLeads()"><div class="k">Leads 📩</div><div class="v" style="color:var(--k-gold)">${TEAM.cards.reduce((s,c)=>s+c.leads,0)}</div></div></div>
+      <div class="card" style="margin-top:.8rem"><h3 style="margin-top:0">Add a staff member</h3>
+        <div class="grid cols-3"><div><label>Email *</label><input id="tm_email" type="email"></div><div><label>First name</label><input id="tm_first"></div><div><label>Last name</label><input id="tm_last"></div>
+          <div><label>Job title</label><input id="tm_job"></div><div><label>Mobile</label><input id="tm_mobile"></div><div style="align-self:end"><button class="btn green" style="width:100%" onclick="addMember()">Create their card</button></div></div>
+        <p class="small muted">Their card is created right away with your brand. They get an email to sign in and add their photo.</p></div>
+      <div class="card" style="margin-top:.8rem;overflow:auto"><h3 style="margin-top:0">Staff cards</h3>
+        <table style="width:100%;font-size:.9rem;border-collapse:collapse"><tr class="small muted" style="text-align:left"><th>Name</th><th>Email</th><th>Scans</th><th>Saved</th><th>Leads</th><th></th><th></th></tr>${rows||'<tr><td colspan="7" class="muted">No staff cards yet.</td></tr>'}</table>
+        ${TEAM.members.length?`<h4>Members</h4>${TEAM.members.map(m=>`<div class="leadrow"><div><b>${esc(m.name||m.email)}</b><div class="small muted">${esc(m.email)}</div></div><button class="btn red sm" onclick="removeMember(${m.id},'${esc(m.email)}')">Remove</button></div>`).join('')}`:''}
+        ${TEAM.invites.length?`<h4>Waiting to sign up</h4>${TEAM.invites.map(i=>`<div class="leadrow"><div><b>${esc(i.email)}</b><div class="small muted">invited ${esc((i.at||'').slice(0,10))} · they should register with this email</div></div><button class="btn ghost sm" onclick="cancelInvite('${esc(i.email)}')">Cancel</button></div>`).join('')}`:''}
+      </div>
+      <div class="card" style="margin-top:.8rem"><h3 style="margin-top:0">Company brand</h3>${teamBrandForm(t)}</div>`;
+  }catch(e){el.innerHTML='<p class="muted">'+esc(e.message)+'</p>';}}
+function teamBrandForm(t){return `<div class="grid cols-2">
+    <div><label>Team name</label><input id="tb_name" value="${esc(t.name||'')}" placeholder="e.g. Sales team"></div>
+    <div><label>Company name (on every card)</label><input id="tb_company" value="${esc(t.company||'')}"></div>
+    <div><label>Card design</label><select id="tb_template">${TEMPLATES.map(x=>`<option value="${x}" ${t.template===x?'selected':''}>${x[0].toUpperCase()+x.slice(1)}</option>`).join('')}</select></div>
+    <div><label>Profile theme</label><select id="tb_theme">${['kente','adinkra','executive'].map(x=>`<option value="${x}" ${t.theme===x?'selected':''}>${x[0].toUpperCase()+x.slice(1)}</option>`).join('')}</select></div>
+    <div><label>Brand colour</label><input id="tb_accent" type="color" value="${esc(t.accent||'#d99b16')}" style="height:2.6rem;padding:.2rem"></div>
+    <div><label>Company logo</label><div class="row" style="gap:.4rem;align-items:center">${t.logo?`<img src="${esc(t.logo)}" style="max-height:40px;max-width:110px;background:#fff;border-radius:6px">`:''}
+      <input type="file" accept="image/*" onchange="pickTeamLogo(this)" style="font-size:.8rem"></div></div></div>
+  <button class="btn green" style="margin-top:.7rem" onclick="saveTeamBrand()">${t.id?'Save brand & update all cards':'Create team'}</button>`;}
+function pickTeamLogo(input){const f=input.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{const img=new Image();img.onload=()=>{const s=Math.min(1,800/Math.max(img.width,img.height));
+  const cv=document.createElement('canvas');cv.width=Math.round(img.width*s);cv.height=Math.round(img.height*s);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);TEAMLOGO=cv.toDataURL('image/png');toast('Logo ready — click Save');};img.src=rd.result;};rd.readAsDataURL(f);}
+async function saveTeamBrand(){const v=id=>document.getElementById(id).value;
+  try{await api('/api/team',{method:'POST',body:JSON.stringify({name:v('tb_name'),company:v('tb_company'),template:v('tb_template'),theme:v('tb_theme'),accent:v('tb_accent'),logo:TEAMLOGO})});
+    ME=await api('/api/me');applyRole();toast('Team brand saved — all staff cards updated');loadTeam();}catch(e){toast(e.message);}}
+async function addMember(){const v=id=>document.getElementById(id).value.trim();
+  try{const r=await api('/api/team/members',{method:'POST',body:JSON.stringify({email:v('tm_email'),first_name:v('tm_first'),last_name:v('tm_last'),job_title:v('tm_job'),mobile:v('tm_mobile')})});
+    toast(r.invited?'Card created — invite sent to their email':'Card created and added to their account');loadTeam();}catch(e){toast(e.message);}}
+async function removeMember(id,email){if(!confirm('Remove '+email+' from the team? Their company card will be switched off and returned to you.'))return;
+  try{await api('/api/team/members/'+id,{method:'DELETE'});toast('Removed');loadTeam();}catch(e){toast(e.message);}}
+async function cancelInvite(email){try{await api('/api/team/invites?email='+encodeURIComponent(email),{method:'DELETE'});toast('Invite cancelled');loadTeam();}catch(e){toast(e.message);}}
+
+/* ============ offline QR image for the phone's photos ============ */
+async function myQrImage(){
+  if(!await ensureSaved())return;
+  const c=collect(),url=siteBase()+'/c/'+CARD.slug,name=[c.first_name,c.last_name].filter(Boolean).join(' ')||'My card',acc=CARD.accent||'#d99b16';
+  const Wd=1080,Ht=1920,q=760,qx=(Wd-q)/2,qy=640;
+  const sub=[c.job_title,c.company].filter(Boolean).join(' · ');
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Wd} ${Ht}" font-family="Arial, Helvetica, sans-serif">
+    <rect width="${Wd}" height="${Ht}" fill="#171410"/><rect width="${Wd}" height="26" fill="${acc}"/><rect y="${Ht-26}" width="${Wd}" height="26" fill="${acc}"/>
+    <text x="${Wd/2}" y="250" fill="#f2c14e" font-size="54" font-weight="700" text-anchor="middle">Halo<tspan fill="#fdf6e6">Card</tspan></text>
+    <text x="${Wd/2}" y="430" fill="#fdf6e6" font-size="${Math.min(84,Math.floor(1700/Math.max(8,name.length)))}" font-weight="700" text-anchor="middle">${esc(name)}</text>
+    ${sub?`<text x="${Wd/2}" y="510" fill="${acc}" font-size="40" text-anchor="middle">${esc(sub)}</text>`:''}
+    <rect x="${qx-30}" y="${qy-30}" width="${q+60}" height="${q+60}" rx="44" fill="${acc}"/>${qrSvg(url,qx,qy,q,'#171410')}
+    <text x="${Wd/2}" y="${qy+q+140}" fill="#fdf6e6" font-size="46" font-weight="700" text-anchor="middle">Scan to open my card</text>
+    <text x="${Wd/2}" y="${qy+q+205}" fill="#a99e8a" font-size="32" text-anchor="middle">${esc(url.replace(/^https?:\/\//,''))}</text></svg>`;
+  try{const img=await svgToImage(svg);const cv=document.createElement('canvas');cv.width=Wd;cv.height=Ht;cv.getContext('2d').drawImage(img,0,0);
+    const b=await canvasBlob(cv);const file=new File([b],(name.replace(/\s+/g,'-')||'halocard')+'-QR.png',{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:'My HaloCard QR'});return;}catch(e){if(e.name==='AbortError')return;}}
+    dl(URL.createObjectURL(b),file.name);
+    toast('QR image saved — keep it in your Photos or set it as your lock screen to share offline');
+  }catch(e){toast('Could not make the QR image: '+e.message);}}
+
 /* ============ modal ============ */
 function openModal(title,html){document.getElementById('mTitle').textContent=title;document.getElementById('mBody').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
 function closeModal(){document.getElementById('modal').classList.add('hidden');}
 
 /* ============ leads inbox ============ */
 let LEADS=[];
-function showLeads(){hideAllViews();document.getElementById('leadsView').classList.remove('hidden');loadLeads();}
+function showLeads(){hideAllViews();document.getElementById('leadsView').classList.remove('hidden');loadLeads().then(()=>api('/api/leads/seen',{method:'POST'}).then(()=>setLeadBadge(0)).catch(()=>{}));}
+function setLeadBadge(n){const b=document.getElementById('leadBadge');if(!b)return;b.textContent=n>99?'99+':n;b.classList.toggle('hidden',!n);}
+const LSTAT={new:'🆕 New',contacted:'💬 Contacted',won:'✅ Won',lost:'✖ Lost'};
+async function setLead(id,patch,el){try{await api('/api/leads/'+id,{method:'PUT',body:JSON.stringify(patch)});
+  if(patch.status&&el){el.className='lstat '+patch.status;const l=LEADS.find(x=>x.id===id);if(l)l.status=patch.status;}
+  if(patch.notes!==undefined)toast('Note saved');}catch(e){toast(e.message);}}
 function showUsers(){hideAllViews();document.getElementById('usersView').classList.remove('hidden');loadUsers();}
 async function loadUsers(){
   try{const {users}=await api('/api/admin/users');
@@ -425,8 +677,8 @@ async function delUser(id,email){if(!confirm('Delete '+email+' and ALL their car
 async function openPricing(){
   try{const b=await api('/api/billing/plans');
     const feat={free:['1 card','Kente profile + vCard','All socials + QR','4K PNG export'],
-      pro:[b.plans.pro.cards+' cards','Lead capture inbox','Pay Me button (MoMo)','Analytics + link taps','Custom link (slug)'],
-      business:[b.plans.business.cards+' cards','Everything in Pro','No HaloCard footer','Priority support']};
+      pro:[b.plans.pro.cards+' cards','Verified ✓ badge','Lead inbox + email alerts','Pay Me button (MoMo)','WhatsApp chat, booking, map & reviews','Opening hours + products menu','Intro video + premium themes','Analytics + custom link'],
+      business:[b.plans.business.cards+' people / cards','Everything in Pro','Team brand for all staff cards','All staff leads in one inbox','No HaloCard footer','Priority support']};
     const col=(k)=>{const p=b.plans[k];const cur=b.current===k;
       return `<div class="card" style="flex:1;min-width:150px;${cur?'border:2px solid var(--k-gold)':''}">
         <h3 style="margin:0">${p.label}</h3>
@@ -445,27 +697,37 @@ async function buyPlan(plan){
   }catch(e){toast(e.message);}}
 async function loadLeads(){
   try{const {leads}=await api('/api/leads');LEADS=leads;
+    const evs=[...new Set(leads.map(l=>l.event).filter(Boolean))],sel=document.getElementById('leadFilter'),cur=sel.value;
+    sel.innerHTML='<option value="">All leads</option>'+evs.map(e=>`<option value="${esc(e)}" ${e===cur?'selected':''}>📍 ${esc(e)}</option>`).join('');
+    renderLeads();
+  }catch(e){toast(e.message);}}
+const leadsShown=()=>{const f=document.getElementById('leadFilter').value;return f?LEADS.filter(l=>l.event===f):LEADS;};
+function renderLeads(){const leads=leadsShown();
     document.getElementById('leadList').innerHTML=leads.length?leads.map(l=>{
       const who=[l.name,l.company].filter(Boolean).join(' · ')||'(no name)';
       const card=[l.cf,l.cl].filter(Boolean).join(' ');
-      const wa=l.phone?`<a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/${esc(String(l.phone).replace(/[^\d]/g,''))}">WhatsApp</a>`:'';
+      const waN=String(l.phone||'').replace(/[^\d]/g,'').replace(/^0/,'233');
+      const wa=l.phone?`<a class="btn ghost sm" target="_blank" rel="noopener" href="https://wa.me/${esc(waN)}?text=${encodeURIComponent('Hi '+(l.name||'')+', thanks for connecting via my HaloCard! ')}">WhatsApp</a>`:'';
       const tel=l.phone?`<a class="btn ghost sm" href="tel:${esc(l.phone)}">Call</a>`:'';
       const em=l.email?`<a class="btn ghost sm" href="mailto:${esc(l.email)}">Email</a>`:'';
       return `<div class="leadrow"><div>
         <strong>${esc(who)}</strong>
         <div class="small muted">${esc(l.phone||'')}${l.email?' · '+esc(l.email):''}</div>
         ${l.note?`<div class="small">“${esc(l.note)}”</div>`:''}
-        <div class="small muted">via ${esc(card||l.cslug||'card')} · ${esc(l.at)} UTC</div>
-      </div><div class="row" style="gap:.3rem;flex-wrap:wrap;justify-content:flex-end">${wa}${tel}${em}
+        <div class="small muted">via ${esc(card||l.cslug||'card')}${l.event?' · 📍 '+esc(l.event):''} · ${esc(l.at)} UTC ${l.seen?'':'<span class="badge">NEW</span>'}</div>
+        <textarea class="lnote" rows="1" placeholder="Private note (follow-up, what they need…)" onchange="setLead(${l.id},{notes:this.value})">${esc(l.notes||'')}</textarea>
+      </div><div class="row" style="gap:.3rem;flex-wrap:wrap;justify-content:flex-end;align-content:flex-start">
+        <select class="lstat ${esc(l.status||'new')}" onchange="setLead(${l.id},{status:this.value},this)">${Object.entries(LSTAT).map(([k,v])=>`<option value="${k}" ${(l.status||'new')===k?'selected':''}>${v}</option>`).join('')}</select>
+        ${wa}${tel}${em}
         <button class="btn red sm" onclick="delLead(${l.id})">✕</button></div></div>`;
     }).join(''):'<p class="muted center" style="padding:1rem">No leads yet. When someone scans your card and shares their details back, they land here.</p>';
-  }catch(e){toast(e.message);}}
+}
 async function delLead(id){if(!confirm('Delete this lead?'))return;try{await api('/api/leads/'+id,{method:'DELETE'});loadLeads();}catch(e){toast(e.message);}}
 function exportLeadsCsv(){
-  if(!LEADS.length){toast('No leads to export');return;}
-  const cols=['at','name','phone','email','company','note','cslug'];
-  const csv=[['date','name','phone','email','company','note','card'].join(',')]
-    .concat(LEADS.map(l=>cols.map(k=>{const v=String(l[k]??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(','))).join('\r\n');
+  const rowsL=leadsShown();if(!rowsL.length){toast('No leads to export');return;}
+  const cols=['at','name','phone','email','company','note','status','notes','event','cslug'];
+  const csv=[['date','name','phone','email','company','message','status','my notes','event','card'].join(',')]
+    .concat(rowsL.map(l=>cols.map(k=>{const v=String(l[k]??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(','))).join('\r\n');
   dl(URL.createObjectURL(new Blob([csv],{type:'text/csv'})),'halocard-leads.csv');}
 
 /* ============ per-card analytics ============ */
@@ -579,6 +841,7 @@ function parseCsv(text){ /* RFC-4180: handles quoted fields, embedded commas, ""
   const ref=q.get('reference')||q.get('trxref');
   if(ref){history.replaceState(null,'','/app');toast('Confirming your payment…');
     const tryVerify=async(n)=>{try{const r=await fetch('/api/billing/verify?reference='+encodeURIComponent(ref),{headers:HDRS});const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.kind==='nfc'){toast('🎉 Payment received — NFC card order #'+d.order+' is confirmed. We\u2019ll print and deliver it.');setTimeout(myOrders,1200);return;}
       if(r.ok){ME=await api('/api/me');applyRole();toast('🎉 Payment confirmed — you\u2019re now on '+(d.plan==='business'?'Business 👑':'Pro ⭐')+'!');return;}
       if(r.status===402){toast('Payment was not completed. You have not been charged for an upgrade.');return;}
       if(n<3)return setTimeout(()=>tryVerify(n+1),4000);toast(d.error||'We could not confirm the payment yet — refresh in a minute.');}

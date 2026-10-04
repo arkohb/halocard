@@ -114,3 +114,60 @@ checks, per-IP login rate limiting, request body cap, security headers
 production guard that refuses a weak AUTH_SECRET. Set a strong
 AUTH_SECRET and a real ADMIN_PASSWORD before going live.
 ================================================================
+
+----------------------------------------------------------------
+PHASE 1 UPGRADE (Oct 2026) — NEW FEATURES & SETTINGS
+----------------------------------------------------------------
+Pro/Business profile: Verified badge, "Chat on WhatsApp" with a
+greeting, booking link, map directions, Google review link, opening
+hours with "Open now", products & services price list (Order on
+WhatsApp / Pay), intro video (YouTube plays on the card), and three
+themes: Kente, Adinkra, Executive (black & gold).
+Leads: status (New / Contacted / Won / Lost), private notes, unread
+badge, email alert for every new lead, swap-details prompt.
+NFC card shop: customers order PVC or metal NFC cards and pay by
+MoMo/card; admin "Orders" page to track printing and delivery.
+"Save QR to phone": a lock-screen QR image for sharing offline.
+
+New Railway variables (all optional):
+  RESEND_API_KEY     from resend.com (free) — turns on lead emails
+  MAIL_FROM          e.g.  HaloCard <hello@yourdomain.com>
+                     (needs your domain verified in Resend; until then
+                      emails only reach the Resend account's own email)
+  PRICE_NFC_PVC      default 250  (GHS)
+  PRICE_NFC_METAL    default 400  (GHS)
+  NFC_DELIVERY_GHS   default 0    (added to every NFC order)
+
+----------------------------------------------------------------
+PHASE 2 UPGRADE — TEAMS, EVENTS, REFERRALS, REPORTS, WALLET
+----------------------------------------------------------------
+Teams (Business plan): "Team" page — set a company brand (name, logo,
+colour, card design, profile theme) once; add staff by email. Each
+staff card is created instantly with the brand; staff sign in (or
+register with that email) to add their photo. Staff get Business
+features through the company. The owner sees every staff card's
+scans/saves/leads and all their leads in one inbox. Removing someone
+switches their company card off and returns it to the owner.
+Event mode: in Business profile set an event name, stand and end
+date — the card shows "Meet me at …" and new leads are tagged with
+the event (filter + export them in Leads). Turns off after the date.
+Referrals: "🎁 Invite" gives each user a link (/register?ref=CODE).
+When someone they invited pays for a plan, the inviter gets free
+days of Pro (or extra days on their plan). Once per invited person.
+Monthly report: on the 1st of each month every user gets an email
+with last month's scans, saves, leads and link taps per card (users
+can switch it off under ⚙️ Account). Admin can send them now with
+POST /api/admin/reports/run. Needs RESEND_API_KEY.
+Google Wallet: "Add to Google Wallet" button in the card editor
+appears once the three GOOGLE_WALLET_* variables are set.
+Security: fixed a bug where any signed-in user could enable/disable
+another user's card.
+
+New Railway variables (all optional):
+  REFERRAL_REWARD_DAYS        default 30
+  GOOGLE_WALLET_ISSUER_ID     from Google Pay & Wallet Console
+  GOOGLE_WALLET_SA_EMAIL      service-account email with Wallet access
+  GOOGLE_WALLET_PRIVATE_KEY   that service account's private key (PEM;
+                              paste with real line breaks or \n)
+Apple Wallet is not included: it needs an Apple Developer account
+(US$99/yr), a Pass Type certificate and a signing library.

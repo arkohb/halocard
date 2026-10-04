@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS leads(
   at TEXT DEFAULT (datetime('now')));
 `);
 /* lightweight migration: columns added after v1 (safe to re-run) */
-for (const col of ["tiktok", "snapchat", "payment_url", "payment_label"]) {
+for (const col of ["tiktok", "snapchat", "payment_url", "payment_label", "extras"]) {
   try { db.exec(`ALTER TABLE cards ADD COLUMN ${col} TEXT`); } catch { /* already exists */ }
 }
 try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch {}
@@ -66,6 +66,28 @@ try { db.exec("ALTER TABLE users ADD COLUMN name TEXT"); } catch {}
 try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch {}
 try { db.exec("ALTER TABLE users ADD COLUMN plan_expires TEXT"); } catch {}
 try { db.exec("ALTER TABLE cards ADD COLUMN user_id INTEGER"); } catch {}
+/* leads: follow-up status, private notes, unread flag */
+try { db.exec("ALTER TABLE leads ADD COLUMN status TEXT DEFAULT 'new'"); } catch {}
+try { db.exec("ALTER TABLE leads ADD COLUMN notes TEXT"); } catch {}
+try { db.exec("ALTER TABLE leads ADD COLUMN seen INTEGER DEFAULT 0"); } catch {}
+/* teams, events, referrals, reports */
+for (const sql of [
+  "ALTER TABLE users ADD COLUMN team_id INTEGER", "ALTER TABLE users ADD COLUMN ref_code TEXT",
+  "ALTER TABLE users ADD COLUMN referred_by INTEGER", "ALTER TABLE users ADD COLUMN ref_rewarded INTEGER DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN report_opt_out INTEGER DEFAULT 0",
+  "ALTER TABLE cards ADD COLUMN team_id INTEGER", "ALTER TABLE leads ADD COLUMN event TEXT",
+]) { try { db.exec(sql); } catch {} }
+db.exec(`CREATE TABLE IF NOT EXISTS teams(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id INTEGER UNIQUE NOT NULL, name TEXT, company TEXT,
+  logo TEXT, accent TEXT, template TEXT, theme TEXT, at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS team_invites(email TEXT PRIMARY KEY, team_id INTEGER, card_id INTEGER, at TEXT DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);`);
+/* physical NFC card orders */
+db.exec(`CREATE TABLE IF NOT EXISTS nfc_orders(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, card_id INTEGER,
+  material TEXT, qty INTEGER, name_on_card TEXT, phone TEXT, address TEXT, city TEXT, region TEXT, note TEXT,
+  amount REAL, status TEXT DEFAULT 'awaiting_payment', reference TEXT, tracking TEXT,
+  at TEXT DEFAULT (datetime('now')), paid_at TEXT)`);
 /* the original single account becomes the admin; existing cards belong to them */
 db.prepare("UPDATE users SET role='admin' WHERE email=?").run(ADMIN_EMAIL);
 const _adm = db.prepare("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").get();
@@ -80,19 +102,154 @@ const BILLING_PERIOD_DAYS = Number(process.env.BILLING_PERIOD_DAYS || 365); /* a
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const PAYSTACK_UPGRADE_URL = process.env.PAYSTACK_UPGRADE_URL || ""; /* fallback: manual payment page */
 /* effective plan (admin = business; paid plans lapse to free on expiry) */
-function planOf(u) {
+function planOf(u, depth = 0) {
   if (!u) return "free";
   if (u.role === "admin") return "business";
+  if (u.team_id && depth === 0) {
+    const t = db.prepare("SELECT owner_id FROM teams WHERE id=?").get(u.team_id);
+    const owner = t && t.owner_id !== u.id ? db.prepare("SELECT * FROM users WHERE id=?").get(t.owner_id) : null;
+    if (owner && planOf(owner, 1) === "business") return "business";
+  }
   let p = PLANS[u.plan] ? u.plan : "free";
   if (p !== "free" && u.plan_expires && Date.parse(u.plan_expires) < Date.now()) p = "free";
   return p;
 }
 const planAtLeast = (p, min) => ({ free: 0, pro: 1, business: 2 }[p] >= { free: 0, pro: 1, business: 2 }[min]);
 const PLAN_RANK = { free: 0, pro: 1, business: 2 };
+/* physical NFC cards (prices in GHS; override in Railway variables) */
+const NFC_PRODUCTS = {
+  pvc:   { label: "Kente PVC NFC card",   price: Number(process.env.PRICE_NFC_PVC || 250) },
+  metal: { label: "Black & gold metal NFC card", price: Number(process.env.PRICE_NFC_METAL || 400) },
+};
+const NFC_DELIVERY_GHS = Number(process.env.NFC_DELIVERY_GHS || 0);
+const ORDER_STATUSES = ["awaiting_payment", "paid", "printing", "shipped", "delivered", "cancelled"];
+const LEAD_STATUSES = ["new", "contacted", "won", "lost"];
 /* Apply a Paystack transaction exactly once. Used by BOTH the webhook and the
    return-from-checkout verify call, so a missing/misrouted webhook can't strand a payer. */
+/* referral programme: when someone you invited pays for a plan, you get REFERRAL_REWARD_DAYS of Pro (or extra time) */
+const REFERRAL_REWARD_DAYS = Number(process.env.REFERRAL_REWARD_DAYS || 30);
+function rewardReferrer(uid) {
+  const u = db.prepare("SELECT referred_by, ref_rewarded FROM users WHERE id=?").get(uid);
+  if (!u || !u.referred_by || u.ref_rewarded) return;
+  const r = db.prepare("SELECT * FROM users WHERE id=?").get(u.referred_by);
+  db.prepare("UPDATE users SET ref_rewarded=1 WHERE id=?").run(uid);
+  if (!r || r.role === "admin") return;
+  const add = REFERRAL_REWARD_DAYS * 86400000, cur = planOf(r, 1);
+  const base = r.plan_expires && Date.parse(r.plan_expires) > Date.now() && cur !== "free" ? Date.parse(r.plan_expires) : Date.now();
+  db.prepare("UPDATE users SET plan=?, plan_expires=? WHERE id=?").run(cur === "free" ? "pro" : r.plan, new Date(base + add).toISOString(), r.id);
+  console.log(`referrals: user ${r.id} rewarded ${REFERRAL_REWARD_DAYS} days for referring user ${uid}`);
+  sendEmail(r.email, "You earned a free month of HaloCard Pro 🎁", `<p>Someone you invited just upgraded their HaloCard. We've added <b>${REFERRAL_REWARD_DAYS} days of ${cur === "free" ? "Pro" : esc(r.plan)}</b> to your account. Thank you for spreading the word!</p>`);
+}
+function refCodeFor(uid) {
+  let u = db.prepare("SELECT ref_code FROM users WHERE id=?").get(uid);
+  if (u && u.ref_code) return u.ref_code;
+  for (let i = 0; i < 5; i++) {
+    const code = crypto.randomBytes(4).toString("base64url").replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase();
+    if (code.length === 6 && !db.prepare("SELECT 1 FROM users WHERE ref_code=?").get(code)) { db.prepare("UPDATE users SET ref_code=? WHERE id=?").run(code, uid); return code; }
+  }
+  return "";
+}
+
+/* ---------- teams: one brand for every staff card ---------- */
+const teamOwnedBy = (uid) => db.prepare("SELECT * FROM teams WHERE owner_id=?").get(uid);
+function applyTeamBrand(cardId) {
+  const c = db.prepare("SELECT id, team_id, extras FROM cards WHERE id=?").get(cardId);
+  if (!c || !c.team_id) return;
+  const t = db.prepare("SELECT * FROM teams WHERE id=?").get(c.team_id);
+  if (!t) return;
+  const x = cleanExtras(c.extras); if (t.theme) x.theme = t.theme;
+  db.prepare(`UPDATE cards SET company=COALESCE(NULLIF(?,''),company), logo=COALESCE(?,logo), accent=COALESCE(?,accent),
+    template=COALESCE(?,template), extras=? WHERE id=?`).run(t.company || "", t.logo || null, t.accent || null, t.template || null, JSON.stringify(x), c.id);
+}
+
+/* ---------- monthly scan report (email) ---------- */
+function reportHtml(u, from, to, label, base) {
+  const cards = db.prepare("SELECT id, slug, first_name, last_name FROM cards WHERE user_id=? OR team_id IN (SELECT id FROM teams WHERE owner_id=?)").all(u.id, u.id);
+  if (!cards.length) return null;
+  let tot = { scan: 0, vcard: 0, lead: 0 }; const rows = [];
+  for (const c of cards) {
+    const e = {}; for (const r of db.prepare("SELECT type, COUNT(*) n FROM events WHERE card_id=? AND at>=? AND at<? GROUP BY type").all(c.id, from, to)) e[r.type] = r.n;
+    const taps = db.prepare("SELECT COUNT(*) n FROM events WHERE card_id=? AND at>=? AND at<? AND type LIKE 'click:%'").get(c.id, from, to).n;
+    tot.scan += e.scan || 0; tot.vcard += e.vcard || 0; tot.lead += e.lead || 0;
+    rows.push(`<tr><td style="padding:6px 8px">${esc(fullName(c) || c.slug)}</td><td align="center">${e.scan || 0}</td><td align="center">${e.vcard || 0}</td><td align="center">${e.lead || 0}</td><td align="center">${taps}</td></tr>`);
+  }
+  const box = (k, v, col) => `<td style="background:#fdf6e6;border-radius:10px;padding:12px;text-align:center"><div style="font-size:26px;font-weight:bold;color:${col}">${v}</div><div style="font-size:12px;color:#6b6256">${k}</div></td>`;
+  return `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;border:1px solid #eee2c5;border-radius:14px;overflow:hidden">
+  <div style="background:#171410;color:#f2c14e;padding:14px 18px;font-size:18px;font-weight:bold">HaloCard &middot; Your ${esc(label)} report</div>
+  <div style="padding:16px 18px;color:#171410"><p style="margin:0 0 12px">Hi ${esc(u.name || "there")}, here's how your cards did:</p>
+  <table width="100%" cellspacing="6"><tr>${box("Scans", tot.scan, "#b07a0c")}${box("Contacts saved", tot.vcard, "#1f7a4d")}${box("Leads", tot.lead, "#b23a2a")}</tr></table>
+  <table width="100%" style="font-size:14px;margin-top:10px;border-collapse:collapse"><tr style="color:#6b6256;font-size:12px"><td style="padding:6px 8px">Card</td><td align="center">Scans</td><td align="center">Saved</td><td align="center">Leads</td><td align="center">Link taps</td></tr>${rows.join("")}</table>
+  <p style="margin:16px 0 0">${tot.lead ? `You have leads waiting — <a href="${esc(base)}/app" style="color:#b07a0c">follow up now</a>.` : `Tip: share your card link on your WhatsApp status to get more scans.`}</p>
+  <p style="font-size:12px;color:#8f8570;margin-top:14px">Don't want these? Turn off monthly reports in HaloCard &rarr; Account.</p></div></div>`;
+}
+async function sendMonthlyReports(force) {
+  if (!RESEND_API_KEY) return 0;
+  const now = new Date();
+  if (!force && now.getUTCDate() !== 1) return 0;
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)), end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const key = "report_" + start.toISOString().slice(0, 7);
+  if (db.prepare("SELECT 1 FROM meta WHERE k=?").get(key)) return 0;
+  db.prepare("INSERT INTO meta(k,v) VALUES (?,?)").run(key, new Date().toISOString());
+  const label = start.toLocaleString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const sql = (d) => d.toISOString().slice(0, 19).replace("T", " ");
+  let n = 0;
+  for (const u of db.prepare("SELECT * FROM users WHERE COALESCE(report_opt_out,0)=0").all()) {
+    const html = reportHtml(u, sql(start), sql(end), label, APP_URL || "");
+    if (html && await sendEmail(u.email, `Your HaloCard report — ${label}`, html)) n++;
+  }
+  console.log(`reports: sent ${n} monthly reports for ${label}`);
+  return n;
+}
+setInterval(() => { sendMonthlyReports(false).catch((e) => console.warn("reports:", e.message)); }, 60 * 60 * 1000).unref();
+
+/* ---------- Google Wallet pass (needs a Google Wallet issuer account) ---------- */
+const GW_ISSUER = process.env.GOOGLE_WALLET_ISSUER_ID || "";
+const GW_SA_EMAIL = process.env.GOOGLE_WALLET_SA_EMAIL || "";
+const GW_KEY = (process.env.GOOGLE_WALLET_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+const googleWalletOn = () => !!(GW_ISSUER && GW_SA_EMAIL && GW_KEY);
+function googleWalletUrl(c, base) {
+  const b64 = (o) => Buffer.from(typeof o === "string" ? o : JSON.stringify(o)).toString("base64url");
+  const url = `${base}/c/${c.slug}`, classId = `${GW_ISSUER}.halocard_contact`;
+  const img = c.photo ? `${base}/c/${c.slug}/photo` : c.logo ? `${base}/c/${c.slug}/logo` : `${base}/icons/icon-512.png`;
+  const t = (v) => ({ defaultValue: { language: "en", value: String(v || " ") } });
+  const obj = {
+    id: `${GW_ISSUER}.hc_${String(c.slug).replace(/[^\w.-]/g, "_")}`, classId, state: "ACTIVE",
+    hexBackgroundColor: "#171410", logo: { sourceUri: { uri: img } },
+    cardTitle: t(c.company || "HaloCard"), header: t(fullName(c) || "My card"), subheader: t(c.job_title || "Digital business card"),
+    barcode: { type: "QR_CODE", value: url, alternateText: "Scan to open my card" },
+    textModulesData: [c.mobile && { id: "phone", header: "Phone", body: c.mobile }, c.email && { id: "email", header: "Email", body: c.email }].filter(Boolean),
+    linksModuleData: { uris: [{ uri: url, description: "Open my HaloCard", id: "card" }] },
+  };
+  const claims = { iss: GW_SA_EMAIL, aud: "google", typ: "savetowallet", iat: Math.floor(Date.now() / 1000), origins: [base],
+    payload: { genericClasses: [{ id: classId }], genericObjects: [obj] } };
+  const head = b64({ alg: "RS256", typ: "JWT" }) + "." + b64(claims);
+  const sig = crypto.sign("RSA-SHA256", Buffer.from(head), GW_KEY).toString("base64url");
+  return "https://pay.google.com/gp/v/save/" + head + "." + sig;
+}
+
+function applyOrderPayment(tx, source) {
+  const md = tx.metadata || {}, ref = String(tx.reference || "");
+  const o = db.prepare("SELECT * FROM nfc_orders WHERE id=?").get(Number(md.order_id));
+  if (!o) return { ok: false, reason: "order not found" };
+  if (Number(md.uid) !== o.user_id) return { ok: false, reason: "order belongs to another account" };
+  if (String(tx.currency || "").toUpperCase() !== "GHS") return { ok: false, reason: "wrong currency" };
+  if (!(Number(tx.amount) >= Math.round(o.amount * 100))) return { ok: false, reason: "amount paid is less than the order total" };
+  if (db.prepare("SELECT 1 FROM payments WHERE reference=?").get(ref)) return { ok: true, already: true, kind: "nfc", order: o.id };
+  db.exec("BEGIN");
+  try {
+    db.prepare("INSERT INTO payments(reference,user_id,plan,amount,currency,source) VALUES (?,?,?,?,?,?)").run(ref, o.user_id, "nfc", Number(tx.amount), "GHS", source);
+    db.prepare("UPDATE nfc_orders SET status='paid', reference=?, paid_at=datetime('now') WHERE id=? AND status='awaiting_payment'").run(ref, o.id);
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); if (/UNIQUE|PRIMARY/i.test(String(e))) return { ok: true, already: true, kind: "nfc" }; throw e; }
+  console.log(`orders: NFC order #${o.id} paid (${ref}, via ${source})`);
+  const admin = db.prepare("SELECT email FROM users WHERE role='admin' ORDER BY id LIMIT 1").get();
+  if (admin) sendEmail(admin.email, `New NFC card order #${o.id} (${o.qty} × ${o.material})`,
+    `<p>Order <b>#${o.id}</b> is paid: ${o.qty} × ${esc(o.material)} — GHS ${o.amount}.</p><p>Name on card: <b>${esc(o.name_on_card)}</b><br>Deliver to: ${esc([o.address, o.city, o.region].filter(Boolean).join(", "))}<br>Phone: ${esc(o.phone)}</p>`);
+  return { ok: true, kind: "nfc", order: o.id };
+}
 function applyPayment(tx, source) {
   if (!tx || tx.status !== "success") return { ok: false, reason: "payment not successful" };
+  if (tx.metadata && tx.metadata.kind === "nfc") return applyOrderPayment(tx, source);
   const ref = String(tx.reference || "");
   const md = tx.metadata || {};
   const uid = Number(md.uid), plan = String(md.plan || "");
@@ -124,6 +281,7 @@ function applyPayment(tx, source) {
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); if (/UNIQUE|PRIMARY/i.test(String(e))) return { ok: true, already: true }; throw e; }
   console.log(`billing: user ${uid} paid ${plan} (${ref}, via ${source}) -> ${newPlan} until ${expires}`);
+  rewardReferrer(uid);
   return { ok: true, plan: newPlan, expires };
 }
 async function paystackVerify(reference) {
@@ -148,6 +306,86 @@ function cleanPayUrl(v) {
   if (u.protocol !== "https:" || !PAY_HOSTS.some((h) => host === h || host.endsWith("." + h))) return null;
   return u.toString();
 }
+/* ---------- business-profile extras (stored as one JSON column) ---------- */
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const THEMES = ["kente", "adinkra", "executive"];
+const httpsUrl = (v, max = 400) => { v = vv(v).replace(/\s+/g, "").slice(0, max); if (!v) return ""; if (/^http:\/\//i.test(v)) v = "https://" + v.slice(7); if (!/^https:\/\//i.test(v)) v = "https://" + v; try { const u = new URL(v); return u.protocol === "https:" ? u.toString() : ""; } catch { return ""; } };
+const hhmm = (v) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v || "")) ? String(v) : "");
+function cleanExtras(x) {
+  if (typeof x === "string") { try { x = JSON.parse(x || "{}"); } catch { x = {}; } }
+  if (!x || typeof x !== "object") x = {};
+  const out = {
+    wa_message: vv(x.wa_message).slice(0, 300),
+    booking_url: httpsUrl(x.booking_url), review_url: httpsUrl(x.review_url),
+    maps_url: httpsUrl(x.maps_url), video_url: httpsUrl(x.video_url),
+    theme: THEMES.includes(x.theme) ? x.theme : "kente",
+    hours: {}, menu: [], menu_title: vv(x.menu_title).slice(0, 40),
+    event_name: vv(x.event_name).slice(0, 80), event_place: vv(x.event_place).slice(0, 80),
+    event_until: /^\d{4}-\d{2}-\d{2}$/.test(String(x.event_until || "")) ? String(x.event_until) : "",
+  };
+  const h = x.hours && typeof x.hours === "object" ? x.hours : {};
+  for (const d of DAYS) {
+    const e = h[d] || {};
+    out.hours[d] = { closed: !!e.closed, o: hhmm(e.o), c: hhmm(e.c) };
+  }
+  out.has_hours = DAYS.some((d) => out.hours[d].closed || (out.hours[d].o && out.hours[d].c));
+  for (const it of Array.isArray(x.menu) ? x.menu.slice(0, 30) : []) {
+    const name = vv(it && it.name).slice(0, 80);
+    if (!name) continue;
+    const price = Number(String(it.price ?? "").replace(/[^\d.]/g, ""));
+    out.menu.push({ name, price: isFinite(price) && price > 0 ? Math.round(price * 100) / 100 : null, desc: vv(it.desc).slice(0, 200) });
+  }
+  return out;
+}
+const extrasOf = (c) => cleanExtras(c && c.extras);
+/* event mode is on while the event name is set and the end date (if any) hasn't passed */
+const activeEvent = (x) => (x.event_name && (!x.event_until || x.event_until >= new Date().toISOString().slice(0, 10)) ? x.event_name : "");
+/* YouTube link -> privacy-friendly embed URL (other video links open in a new tab) */
+function youtubeEmbed(u) {
+  const m = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,15})/.exec(u || "");
+  return m ? `https://www.youtube-nocookie.com/embed/${m[1]}` : "";
+}
+/* open/closed right now — Ghana time (Africa/Accra = UTC+0) */
+function openNow(hours) {
+  const now = new Date();
+  const d = DAYS[(now.getUTCDay() + 6) % 7];
+  const e = hours && hours[d];
+  if (!e || e.closed || !e.o || !e.c) return { open: false, today: e };
+  const t = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const [oh, om] = e.o.split(":").map(Number), [ch, cm] = e.c.split(":").map(Number);
+  const o = oh * 60 + om, c = ch * 60 + cm;
+  return { open: c > o ? t >= o && t < c : t >= o || t < c, today: e };
+}
+
+/* ---------- email (Resend) for new-lead alerts ---------- */
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const MAIL_FROM = process.env.MAIL_FROM || "HaloCard <onboarding@resend.dev>";
+async function sendEmail(to, subject, html) {
+  if (!RESEND_API_KEY || !to) return false;
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + RESEND_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, html }),
+    });
+    if (!r.ok) console.warn("email: resend responded", r.status, (await r.text()).slice(0, 200));
+    return r.ok;
+  } catch (e) { console.warn("email: failed", e.message); return false; }
+}
+function leadEmailHtml(card, lead, base) {
+  const wa = lead.phone ? "https://wa.me/" + String(lead.phone).replace(/[^\d]/g, "").replace(/^0/, "233") +
+    "?text=" + encodeURIComponent(`Hi ${lead.name || ""}, thanks for connecting with ${fullName(card) || "me"} via HaloCard. `) : "";
+  const row = (k, v) => (v ? `<tr><td style="padding:4px 10px 4px 0;color:#6b6256">${k}</td><td style="padding:4px 0"><b>${esc(v)}</b></td></tr>` : "");
+  return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;border:1px solid #eee2c5;border-radius:14px;overflow:hidden">
+  <div style="background:#171410;color:#f2c14e;padding:14px 18px;font-size:18px;font-weight:bold">HaloCard &middot; New lead</div>
+  <div style="padding:16px 18px;color:#171410">
+    <p style="margin:0 0 10px">Someone shared their details from your card <b>${esc(fullName(card))}</b>:</p>
+    <table style="font-size:15px">${row("Name", lead.name)}${row("Phone", lead.phone)}${row("Email", lead.email)}${row("Company", lead.company)}${row("Message", lead.note)}</table>
+    ${wa ? `<p style="margin:18px 0 6px"><a href="${wa}" style="background:#25D366;color:#fff;text-decoration:none;padding:11px 18px;border-radius:10px;font-weight:bold">Reply on WhatsApp</a></p>` : ""}
+    <p style="margin:14px 0 0"><a href="${esc(base)}/app" style="color:#b07a0c">Open your leads inbox</a></p>
+  </div></div>`;
+}
+
 const PAY_URL_ERROR = "Payment link must be a Paystack, Flutterwave, Hubtel, MTN MoMo, ExpressPay, Theteller, PayPal or Selar link (e.g. https://paystack.shop/pay/yourpage).";
 function ownerPlanForCard(c) { const u = c.user_id ? db.prepare("SELECT * FROM users WHERE id=?").get(c.user_id) : null; return planOf(u); }
 
@@ -174,6 +412,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "connect-src 'self'",
+  "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
 ].join("; ");
 if (NODE_ENV === "production" && (AUTH_SECRET === "change-me-halocard-secret" || AUTH_SECRET.length < 16)) {
   console.error("FATAL: set a strong AUTH_SECRET (16+ random chars) before running in production."); process.exit(1);
@@ -252,7 +491,7 @@ function slugify(first, last) {
   const base = (String(first || "") + "-" + String(last || "")).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "card";
   return base + "-" + crypto.randomBytes(3).toString("hex");
 }
-const CARD_FIELDS = ["first_name","last_name","middle_name","job_title","company","mobile","secondary","email","website","address","city","country","linkedin","x_twitter","facebook","instagram","whatsapp","tiktok","snapchat","payment_url","payment_label","photo","logo","template","slogan","accent"];
+const CARD_FIELDS = ["first_name","last_name","middle_name","job_title","company","mobile","secondary","email","website","address","city","country","linkedin","x_twitter","facebook","instagram","whatsapp","tiktok","snapchat","payment_url","payment_label","photo","logo","template","slogan","accent","extras"];
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/; /* 3-40 chars */
 const slugTaken = (slug, exceptId) => { const r = db.prepare("SELECT id FROM cards WHERE slug=?").get(slug); return r && r.id !== exceptId; };
 const fullName = (c) => [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" ").trim();
@@ -357,6 +596,9 @@ const ICONS = {
   snapchat: `<svg viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17.5" text-anchor="middle" font-size="14">&#128123;</text></svg>`,
   linkedin: `<svg viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="800" fill="currentColor">in</text></svg>`,
   x: `<svg viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="800" fill="currentColor">&#120143;</text></svg>`,
+  cal: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V9h14v11zM7 11h5v5H7z"/></svg>`,
+  star: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M23 12l-2.44-2.78.34-3.68-3.61-.82-1.89-3.18L12 3 8.6 1.54 6.71 4.72l-3.61.81.34 3.68L1 12l2.44 2.78-.34 3.69 3.61.82 1.89 3.18L12 21l3.4 1.46 1.89-3.18 3.61-.82-.34-3.68L23 12zm-12.91 4.72-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35z"/></svg>`,
   save: `<svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
 };
 function profilePage(c, base, plan = "business") {
@@ -396,6 +638,51 @@ function profilePage(c, base, plan = "business") {
     const addr = [c.address, c.city, c.country].filter(Boolean).join(", ");
     rows.push(`<a class="row" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener"><span class="rk">${ICONS.pin} Address</span><b>${esc(addr)}</b></a>`);
   }
+
+  /* ---- Pro business-profile blocks ---- */
+  const X = extrasOf(c);
+  const theme = PRO ? X.theme : "kente";
+  const biz = [];   /* big action buttons */
+  const waNum = String(c.whatsapp || c.mobile || "").replace(/[^\d]/g, "").replace(/^0/, "233");
+  const addrTxt = [c.address, c.city, c.country].filter(Boolean).join(", ");
+  if (PRO) {
+    if (waNum) biz.push(`<a class="bz wa" href="${go("chat")}" target="_blank" rel="noopener">${ICONS.whatsapp}<span>Chat on WhatsApp</span></a>`);
+    if (X.booking_url) biz.push(`<a class="bz" href="${go("booking")}" target="_blank" rel="noopener">${ICONS.cal}<span>Book an appointment</span></a>`);
+    if (X.maps_url || addrTxt) biz.push(`<a class="bz" href="${go("directions")}" target="_blank" rel="noopener">${ICONS.pin}<span>Get directions</span></a>`);
+    if (X.review_url) biz.push(`<a class="bz" href="${go("review")}" target="_blank" rel="noopener">${ICONS.star}<span>Leave a review</span></a>`);
+  }
+  let hoursHtml = "";
+  if (PRO && X.has_hours) {
+    const lbl = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+    const today = ["mon","tue","wed","thu","fri","sat","sun"][(new Date().getUTCDay() + 6) % 7];
+    const fmt = (t) => { const [h, m] = t.split(":").map(Number); return ((h % 12) || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? "am" : "pm"); };
+    const st = openNow(X.hours);
+    hoursHtml = `<div class="sect">Opening hours <span class="opn ${st.open ? "on" : "off"}">${st.open ? "Open now" : "Closed now"}</span></div>
+    <div class="hours">${Object.keys(lbl).map((d) => { const e = X.hours[d];
+      const v = e.closed ? "Closed" : e.o && e.c ? `${fmt(e.o)} – ${fmt(e.c)}` : "—";
+      return `<div class="hr${d === today ? " today" : ""}"><span>${lbl[d]}</span><b>${v}</b></div>`; }).join("")}</div>`;
+  }
+  let menuHtml = "";
+  if (PRO && X.menu.length) {
+    const pay = c.payment_url && cleanPayUrl(c.payment_url);
+    menuHtml = `<div class="sect">${esc(X.menu_title || "Products & services")}</div><div class="menu">${X.menu.map((it) => {
+      const price = it.price != null ? `GHS ${it.price.toLocaleString("en-GH", { minimumFractionDigits: it.price % 1 ? 2 : 0 })}` : "";
+      const msg = `Hi ${c.first_name || ""}, I'd like to order: ${it.name}${price ? " (" + price + ")" : ""}. (via your HaloCard)`;
+      const order = waNum ? `<a class="mb wa" href="https://wa.me/${waNum}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${ICONS.whatsapp} Order</a>` : "";
+      const payBtn = pay ? `<a class="mb" href="${go("pay")}" target="_blank" rel="noopener">&#128179; Pay</a>` : "";
+      return `<div class="mi"><div class="mi-t"><b>${esc(it.name)}</b>${price ? `<span class="mp">${price}</span>` : ""}</div>
+        ${it.desc ? `<div class="md">${esc(it.desc)}</div>` : ""}${order || payBtn ? `<div class="mbs">${order}${payBtn}</div>` : ""}</div>`; }).join("")}</div>`;
+  }
+  let videoHtml = "";
+  if (PRO && X.video_url) {
+    const emb = youtubeEmbed(X.video_url);
+    videoHtml = emb
+      ? `<div class="sect">Watch my intro</div><div class="vid"><iframe src="${emb}" title="Intro video" loading="lazy" allow="accelerometer; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`
+      : `<a class="bz" href="${go("video")}" target="_blank" rel="noopener" style="margin-top:.55rem">&#9654;<span>Watch my intro video</span></a>`;
+  }
+  const evName = PRO ? activeEvent(X) : "";
+  const eventHtml = evName ? `<div class="evt">&#128205; Meet me at <b>${esc(evName)}</b>${X.event_place ? ` &middot; ${esc(X.event_place)}` : ""}</div>` : "";
+  const verified = PRO ? `<span class="vbadge" title="Verified HaloCard ${BIZ ? "Business" : "Pro"}">${ICONS.check}</span>` : "";
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -468,6 +755,55 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
 .lmsg.ok{color:#1f7a4d;padding:.8rem 0}
 .lmsg.err{color:#b23a2a}
 .foot{text-align:center;color:#8f8570;font-size:.8rem;margin-top:1.4rem}
+.evt{margin-top:.9rem;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#171410));color:#171410;border-radius:13px;padding:.6rem .8rem;text-align:center;font-size:.92rem;font-weight:600}
+.bzs{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.6rem}
+.bz{display:flex;align-items:center;justify-content:center;gap:.45rem;background:#fff;border:1.5px solid #e6dcc6;color:var(--ink);font-weight:800;font-size:.86rem;text-decoration:none;border-radius:13px;padding:.7rem .5rem;text-align:center}
+.bz svg{color:var(--accent);flex:none}
+.bz.wa{grid-column:1/-1;background:#25D366;border-color:#1fb457;color:#fff;font-size:.98rem}
+.bz.wa svg{color:#fff}
+.bz:active{transform:scale(.97)}
+.vbadge{display:inline-flex;vertical-align:middle;margin-left:.3rem;color:#1d9bf0}
+.vbadge svg{width:21px;height:21px}
+.opn{display:inline-block;margin-left:.45rem;padding:.12rem .5rem;border-radius:999px;font-size:.7rem;letter-spacing:.04em}
+.opn.on{background:#e3f4ea;color:#1f7a4d}.opn.off{background:#f6e3df;color:#b23a2a}
+.hours{background:#fff;border:1.5px solid #e6dcc6;border-radius:13px;padding:.3rem .85rem}
+.hr{display:flex;justify-content:space-between;padding:.38rem 0;border-bottom:1px dashed #eee2c5;font-size:.92rem;color:var(--mut)}
+.hr:last-child{border-bottom:none}.hr b{color:var(--ink)}.hr.today span,.hr.today b{color:var(--accent);filter:brightness(.8)}
+.menu{display:flex;flex-direction:column;gap:.5rem}
+.mi{background:#fff;border:1.5px solid #e6dcc6;border-radius:13px;padding:.7rem .85rem}
+.mi-t{display:flex;justify-content:space-between;gap:.6rem;align-items:baseline}
+.mp{font-weight:800;color:var(--accent);filter:brightness(.8);white-space:nowrap}
+.md{font-size:.86rem;color:var(--mut);margin-top:.2rem}
+.mbs{display:flex;gap:.4rem;margin-top:.5rem}
+.mb{flex:1;display:flex;align-items:center;justify-content:center;gap:.3rem;border-radius:10px;padding:.5rem;font-weight:800;font-size:.84rem;text-decoration:none;background:var(--dark);color:#f2c14e}
+.mb.wa{background:#25D366;color:#fff}.mb svg{width:18px;height:18px}
+.vid{position:relative;padding-top:56.25%;border-radius:14px;overflow:hidden;background:#000}
+.vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.xbar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:40;background:var(--dark);color:#fdf6e6;border:2px solid var(--accent);border-radius:16px;padding:.7rem .8rem;display:flex;gap:.6rem;align-items:center;max-width:410px;width:calc(100% - 24px);box-shadow:0 10px 30px rgba(0,0,0,.45);font-size:.9rem}
+.xbar[hidden]{display:none}.xbar button{border:none;border-radius:10px;padding:.55rem .7rem;font-weight:800;font-family:inherit;cursor:pointer}
+.xbar .xgo{background:var(--accent);color:#171410;white-space:nowrap}.xbar .xno{background:none;color:#a99e8a;padding:.3rem}
+/* ---- theme: Adinkra (cream, gold symbols, no kente frames) ---- */
+body.t-adinkra{background:#efe6d2}
+body.t-adinkra::before{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cg fill='none' stroke='%23b8892a' stroke-width='2' opacity='.35'%3E%3Ccircle cx='16' cy='16' r='7'/%3E%3Cpath d='M16 6v20M6 16h20'/%3E%3Cpath d='M42 40c6-8 14-8 14 0s-8 8-14 0-14-8-14 0 8 8 14 0z'/%3E%3C/g%3E%3C/svg%3E")}
+body.t-adinkra .sheet-frame,body.t-adinkra .act-frame,body.t-adinkra .chip-ring,body.t-adinkra .avatar-ring{background:var(--accent)}
+body.t-adinkra .kente-band{display:none}
+body.t-adinkra .hero{border-radius:0 0 40px 40px}
+/* ---- theme: Executive (black & gold) ---- */
+body.t-executive{background:#0b0a09}
+body.t-executive::before{background:radial-gradient(70% 40% at 50% 0%,rgba(242,193,78,.16),transparent 70%)}
+body.t-executive .hero{background:linear-gradient(135deg,#1b1813,#0b0a09);border-bottom:1px solid #f2c14e55}
+body.t-executive .hero::after{background:repeating-linear-gradient(-45deg,rgba(242,193,78,.07) 0 1px,transparent 1px 12px)}
+body.t-executive .sheet-frame,body.t-executive .act-frame,body.t-executive .chip-ring,body.t-executive .avatar-ring{background:linear-gradient(135deg,#f2c14e,#9c7413)}
+body.t-executive .kente-band{display:none}
+body.t-executive .sheet{background:#15130f}
+body.t-executive h1{color:#fdf6e6}
+body.t-executive .pcompany,body.t-executive .sect,body.t-executive .chip-lb,body.t-executive .rk,body.t-executive .hr,body.t-executive .md{color:#b3a68a}
+body.t-executive .chip-ic,body.t-executive .avatar{border-color:#15130f}
+body.t-executive .row,body.t-executive .bz:not(.wa),body.t-executive .hours,body.t-executive .mi,body.t-executive .leadbox{background:#1d1a15;border-color:#3a3328;color:#fdf6e6}
+body.t-executive .row b,body.t-executive .hr b,body.t-executive .mi b{color:#fdf6e6}
+body.t-executive .leadbox input,body.t-executive .leadbox textarea{background:#14120e;border-color:#3a3328;color:#fdf6e6}
+body.t-executive .save:not(.pay){background:linear-gradient(135deg,#f2c14e,#c9961c);color:#171410}
+body.t-executive .mb:not(.wa){background:transparent;border:1.5px solid #f2c14e;color:#f2c14e}
 .savetip{position:fixed;inset:0;background:rgba(23,20,16,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50;padding:12px}
 .savetip[hidden]{display:none}
 .savetip-card{background:#fffdf8;border-radius:18px;max-width:440px;width:100%;padding:1.1rem 1.1rem .8rem;box-shadow:0 -6px 30px rgba(0,0,0,.25);border-top:5px solid var(--accent)}
@@ -478,20 +814,25 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
 .savetip-x{display:block;margin:.5rem auto 0;background:none;border:none;color:#8f8570;font-weight:700;font-family:inherit;font-size:.9rem;cursor:pointer}
 .foot b{color:var(--accent)}
 </style></head>
-<body>
+<body class="t-${theme}">
 <div class="page">
   ${kenteBand("top")}
   <div class="hero">${logo}</div>
   <div class="sheet-frame"><div class="sheet">
     <div class="head">
       <div class="avatar-ring">${photo}</div>
-      <h1>${name}</h1>
+      <h1>${name}${verified}</h1>
       ${title ? `<div class="ptitle">${title}</div>` : ""}
       ${company ? `<div class="pcompany">${company}</div>` : ""}
     </div>
+    ${eventHtml}
     <a class="save" id="saveBtn" href="/c/${esc(c.slug)}/vcard.vcf" data-intent="${esc(androidContactIntent(c, base))}">${ICONS.save} Save to Contacts</a>
     ${PRO && c.payment_url && cleanPayUrl(c.payment_url) ? `<a class="save pay" href="/c/${esc(c.slug)}/go/pay" target="_blank" rel="noopener">&#128179; ${esc(vv(c.payment_label) || "Pay Me")}</a>` : ""}
     ${actions.length ? `<div class="acts">${actions.join("")}</div>` : ""}
+    ${biz.length ? `<div class="bzs">${biz.join("")}</div>` : ""}
+    ${videoHtml}
+    ${menuHtml}
+    ${hoursHtml}
     ${chips.length ? `<div class="sect">Connect with me</div><div class="chips">${chipHtml}</div>` : ""}
     ${rows.length ? `<div class="sect">Contact details</div><div class="rows">${rows.join("")}</div>` : ""}
     ${PRO ? `<div class="sect">Share your details back</div>
@@ -514,9 +855,12 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
       Tap <b>Open</b> on the download message at the bottom of the screen (or open the file from your notifications), then tap <b>Save</b>.</div>
     <div class="savetip-b small">Tip: next time, point your phone camera at the QR on the <b>back</b> of the card &mdash; it adds the contact in one step.</div>
     <button type="button" class="save" id="saveAgain" style="margin-top:.6rem">&#11015; Download again</button>
+    ${PRO ? `<button type="button" class="save pay" id="tipSwap" style="width:100%;border:none;cursor:pointer;font-family:inherit">&#128075; Share my details back</button>` : ""}
     <button type="button" class="savetip-x" id="saveTipX">Close</button>
   </div>
 </div>
+${PRO ? `<div id="xbar" class="xbar" hidden><span>&#128075; Swap details with <b>${esc(c.first_name || "them")}</b>?</span>
+  <button type="button" class="xgo" id="xgo">Share mine</button><button type="button" class="xno" id="xno">&#10005;</button></div>` : ""}
 <script>
 /* Save to Contacts, as seamless as each phone allows:
    iPhone  -> vCard served inline: iOS shows the contact card with "Create New Contact" (no download)
@@ -529,6 +873,13 @@ h1{font-size:1.5rem;color:var(--dark);margin-top:.65rem;line-height:1.15}
   function showTip(){ tip.hidden=false; }
   document.getElementById('saveTipX').onclick=function(){ tip.hidden=true; };
   document.getElementById('saveAgain').onclick=function(){ location.href=vcf; };
+  var ts=document.getElementById('tipSwap'); if(ts) ts.onclick=function(){ tip.hidden=true; var l=document.querySelector('.leadbox'); l&&l.scrollIntoView({behavior:'smooth',block:'center'}); };
+  /* exchange: after saving their contact, invite the visitor to share theirs back */
+  var xb=document.getElementById('xbar'), lb=document.querySelector('.leadbox');
+  function offerSwap(){ if(xb && lb && tip.hidden) xb.hidden=false; }
+  if(xb){ document.getElementById('xno').onclick=function(){xb.hidden=true;};
+    document.getElementById('xgo').onclick=function(){xb.hidden=true;lb.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){var n=document.getElementById('ln');n&&n.focus();},500);}; }
+  s.addEventListener('click',function(){ setTimeout(offerSwap,3500); });
   s.addEventListener('click',function(e){
     if(!/Android/i.test(navigator.userAgent) || !s.dataset.intent) return; /* iPhone & desktop: normal link */
     e.preventDefault();
@@ -622,6 +973,14 @@ const server = http.createServer(async (req, res) => {
         website: c.website ? socialUrl("website", c.website) : "",
         pay: c.payment_url && planAtLeast(ownerPlanForCard(c), "pro") ? (cleanPayUrl(c.payment_url) || "") : "",
       };
+      if (planAtLeast(ownerPlanForCard(c), "pro")) {
+        const x = extrasOf(c);
+        const addr = [c.address, c.city, c.country].filter(Boolean).join(", ");
+        targets.booking = x.booking_url; targets.review = x.review_url; targets.video = x.video_url;
+        targets.directions = x.maps_url || (addr ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(addr) : "");
+        const waNum = String(c.whatsapp || c.mobile || "").replace(/[^\d]/g, "").replace(/^0/, "233");
+        targets.chat = waNum ? "https://wa.me/" + waNum + (x.wa_message ? "?text=" + encodeURIComponent(x.wa_message) : "") : "";
+      }
       const target = targets[kind];
       if (!target || !/^https:\/\//i.test(target)) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("Not found"); }
       db.prepare("INSERT INTO events(card_id,type) VALUES (?,?)").run(c.id, "click:" + kind);
@@ -672,8 +1031,13 @@ const server = http.createServer(async (req, res) => {
       const f = (v, n) => vv(v).slice(0, n);
       const name = f(b.name, 120), phone = f(b.phone, 40), email = f(b.email, 160), company = f(b.company, 120), note = f(b.note, 500);
       if (!name && !phone) return json(res, 400, { error: "enter a name or phone" });
-      db.prepare("INSERT INTO leads(card_id,name,phone,email,company,note) VALUES (?,?,?,?,?,?)").run(c.id, name, phone, email, company, note);
+      const evt = activeEvent(extrasOf(db.prepare("SELECT extras FROM cards WHERE id=?").get(c.id)));
+      db.prepare("INSERT INTO leads(card_id,name,phone,email,company,note,event) VALUES (?,?,?,?,?,?,?)").run(c.id, name, phone, email, company, note, evt || null);
       db.prepare("INSERT INTO events(card_id,type) VALUES (?,'lead')").run(c.id);
+      /* email the card owner (fire-and-forget; needs RESEND_API_KEY) */
+      const full = db.prepare("SELECT * FROM cards WHERE id=?").get(c.id);
+      const owner = c.user_id ? db.prepare("SELECT email FROM users WHERE id=?").get(c.user_id) : null;
+      if (owner) sendEmail(owner.email, `New lead from your HaloCard: ${name || phone}`, leadEmailHtml(full, { name, phone, email, company, note }, baseUrl(req)));
       return json(res, 200, { ok: true });
     }
 
@@ -706,14 +1070,41 @@ const server = http.createServer(async (req, res) => {
       if (String(b.password || "").length < 8) return json(res, 400, { error: "password must be 8+ characters" });
       if (db.prepare("SELECT id FROM users WHERE email=?").get(email)) return json(res, 409, { error: "that email is already registered — sign in instead" });
       const salt = crypto.randomBytes(16).toString("hex");
-      const r = db.prepare("INSERT INTO users(email,pass_hash,salt,role,name) VALUES (?,?,?,'user',?)").run(email, hashPassword(b.password, salt), salt, name);
-      const u = db.prepare("SELECT * FROM users WHERE id=?").get(r.lastInsertRowid);
+      const refBy = b.ref ? db.prepare("SELECT id FROM users WHERE ref_code=?").get(String(b.ref).toUpperCase().slice(0, 12)) : null;
+      const r = db.prepare("INSERT INTO users(email,pass_hash,salt,role,name,referred_by) VALUES (?,?,?,'user',?,?)").run(email, hashPassword(b.password, salt), salt, name, refBy ? refBy.id : null);
+      const newId = Number(r.lastInsertRowid);
+      /* invited by a company? join the team and take over the card made for you */
+      const inv = db.prepare("SELECT * FROM team_invites WHERE email=?").get(email);
+      if (inv) {
+        db.prepare("UPDATE users SET team_id=? WHERE id=?").run(inv.team_id, newId);
+        if (inv.card_id) db.prepare("UPDATE cards SET user_id=? WHERE id=? AND team_id=?").run(newId, inv.card_id, inv.team_id);
+        db.prepare("DELETE FROM team_invites WHERE email=?").run(email);
+      }
+      const u = db.prepare("SELECT * FROM users WHERE id=?").get(newId);
       return json(res, 200, { token: signToken(u), email: u.email, role: "user", name: u.name || "" });
     }
 
     const me = bearer(req);
     const isAdmin = !!(me && me.role === "admin");
-    if (req.method === "GET" && p === "/api/me") { if (!me) return json(res, 401, { error: "unauthorized" }); return json(res, 200, { email: me.email, name: me.name || "", role: me.role || "user", plan: planOf(me), plan_expires: me.plan_expires || null, app_url: baseUrl(req) }); }
+    if (req.method === "GET" && p === "/api/me") { if (!me) return json(res, 401, { error: "unauthorized" }); const myTeam = teamOwnedBy(me.id), inTeam = me.team_id ? db.prepare("SELECT t.name, t.company, u.email owner FROM teams t JOIN users u ON u.id=t.owner_id WHERE t.id=?").get(me.team_id) : null;
+      return json(res, 200, { id: me.id, email: me.email, name: me.name || "", role: me.role || "user", plan: planOf(me), plan_expires: me.plan_expires || null, app_url: baseUrl(req),
+        team_owner: !!myTeam, team_member: inTeam || null, wallet_google: googleWalletOn(), report_opt_out: !!me.report_opt_out, email_on: !!RESEND_API_KEY }); }
+    if (req.method === "PUT" && p === "/api/me/prefs") {
+      if (!me) return json(res, 401, { error: "unauthorized" });
+      const b = await jread(req);
+      if (b.report_opt_out !== undefined) db.prepare("UPDATE users SET report_opt_out=? WHERE id=?").run(b.report_opt_out ? 1 : 0, me.id);
+      if (b.name !== undefined) db.prepare("UPDATE users SET name=? WHERE id=?").run(vv(b.name).slice(0, 80), me.id);
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && p === "/api/report/test") {
+      if (!me) return json(res, 401, { error: "unauthorized" });
+      if (!RESEND_API_KEY) return json(res, 400, { error: "Email is not set up yet (RESEND_API_KEY)." });
+      const sql = (d) => d.toISOString().slice(0, 19).replace("T", " ");
+      const html = reportHtml(me, sql(new Date(Date.now() - 30 * 86400000)), sql(new Date(Date.now() + 60000)), "last 30 days", baseUrl(req));
+      if (!html) return json(res, 400, { error: "Create a card first." });
+      const ok = await sendEmail(me.email, "Your HaloCard report — last 30 days", html);
+      return ok ? json(res, 200, { ok: true }) : json(res, 502, { error: "Email could not be sent — check RESEND_API_KEY / MAIL_FROM." });
+    }
     if (req.method === "POST" && p === "/api/change-password") {
       if (!me) return json(res, 401, { error: "unauthorized" });
       const b = await jread(req); if (String(b.password || "").length < 6) return json(res, 400, { error: "password must be 6+ characters" });
@@ -734,8 +1125,11 @@ const server = http.createServer(async (req, res) => {
       const downloads = db.prepare("SELECT COALESCE(SUM(vcard_downloads),0) s FROM cards" + W).get().s;
       const leads = isAdmin
         ? db.prepare("SELECT COUNT(*) n FROM leads").get().n
-        : db.prepare("SELECT COUNT(*) n FROM leads l JOIN cards c ON c.id=l.card_id WHERE c.user_id=?").get(me.id).n;
-      return json(res, 200, { total, active, scans, downloads, leads, role: me.role || "user", app_url: baseUrl(req) });
+        : db.prepare("SELECT COUNT(*) n FROM leads l JOIN cards c ON c.id=l.card_id WHERE (c.user_id=? OR c.team_id IN (SELECT id FROM teams WHERE owner_id=?))").get(me.id, me.id).n;
+      const leads_new = isAdmin
+        ? db.prepare("SELECT COUNT(*) n FROM leads WHERE COALESCE(seen,0)=0").get().n
+        : db.prepare("SELECT COUNT(*) n FROM leads l JOIN cards c ON c.id=l.card_id WHERE (c.user_id=? OR c.team_id IN (SELECT id FROM teams WHERE owner_id=?)) AND COALESCE(l.seen,0)=0").get(me.id, me.id).n;
+      return json(res, 200, { total, active, scans, downloads, leads, leads_new, role: me.role || "user", app_url: baseUrl(req), plan: planOf(me) });
     }
 
     if (p === "/api/cards") {
@@ -769,10 +1163,13 @@ const server = http.createServer(async (req, res) => {
           if (n >= lim) return json(res, 403, { error: `Your ${PLANS[myPlan].label} plan allows ${lim} card${lim > 1 ? "s" : ""}. Upgrade to add more.`, upgrade: true });
         }
         if (b.payment_url) { const pu = cleanPayUrl(b.payment_url); if (pu === null) return json(res, 400, { error: PAY_URL_ERROR }); b.payment_url = pu; }
+        if (b.extras !== undefined) b.extras = JSON.stringify(cleanExtras(b.extras));
         const cols = CARD_FIELDS.filter((f) => b[f] !== undefined);
         const sql = `INSERT INTO cards(slug,user_id,${cols.join(",")}) VALUES (?,?${",?".repeat(cols.length)})`;
         db.prepare(sql).run(slug, ownerId, ...cols.map((f) => b[f] ?? null));
         const c = db.prepare("SELECT * FROM cards WHERE slug=?").get(slug);
+        if (me.team_id) { db.prepare("UPDATE cards SET team_id=? WHERE id=?").run(me.team_id, c.id); applyTeamBrand(c.id); }
+        else if (teamOwnedBy(me.id)) { db.prepare("UPDATE cards SET team_id=? WHERE id=?").run(teamOwnedBy(me.id).id, c.id); applyTeamBrand(c.id); }
         return json(res, 200, { ok: true, id: c.id, slug, url: baseUrl(req) + "/c/" + slug });
       }
     }
@@ -781,7 +1178,10 @@ const server = http.createServer(async (req, res) => {
     const ownCard = (id) => {
       const c = db.prepare("SELECT * FROM cards WHERE id=?").get(id);
       if (!c) return null;
-      if (!isAdmin && c.user_id !== me.id) return null;
+      if (!isAdmin && c.user_id !== me.id) {
+        const t = c.team_id ? db.prepare("SELECT owner_id FROM teams WHERE id=?").get(c.team_id) : null;
+        if (!t || t.owner_id !== me.id) return null;
+      }
       return c;
     };
 
@@ -802,8 +1202,10 @@ const server = http.createServer(async (req, res) => {
           db.prepare("UPDATE cards SET slug=? WHERE id=?").run(newSlug, id);
         }
         if (b.payment_url) { const pu = cleanPayUrl(b.payment_url); if (pu === null) return json(res, 400, { error: PAY_URL_ERROR }); b.payment_url = pu; }
+        if (b.extras !== undefined) b.extras = JSON.stringify(cleanExtras(b.extras));
         const cols = CARD_FIELDS.filter((f) => b[f] !== undefined);
         if (cols.length) db.prepare(`UPDATE cards SET ${cols.map((f) => f + "=?").join(",")}, updated_at=datetime('now') WHERE id=?`).run(...cols.map((f) => b[f] ?? null), id);
+        applyTeamBrand(id);
         return json(res, 200, { ok: true });
       }
       if (req.method === "DELETE") { if (!ownCard(id)) return json(res, 404, { error: "not found" }); db.prepare("DELETE FROM cards WHERE id=?").run(id); db.prepare("DELETE FROM events WHERE card_id=?").run(id); db.prepare("DELETE FROM leads WHERE card_id=?").run(id); return json(res, 200, { ok: true }); }
@@ -858,8 +1260,170 @@ const server = http.createServer(async (req, res) => {
       if (tx.status !== "success") return json(res, 402, { error: "payment not completed (" + (tx.status || "unknown") + ")", status: tx.status });
       const r = applyPayment(tx, "verify");
       if (!r.ok) return json(res, 400, { error: r.reason });
+      if (r.kind === "nfc") return json(res, 200, { ok: true, kind: "nfc", order: r.order });
       const fresh = db.prepare("SELECT * FROM users WHERE id=?").get(me.id);
       return json(res, 200, { ok: true, plan: planOf(fresh), expires: fresh.plan_expires });
+    }
+
+    /* ---------- Google Wallet ---------- */
+    const mWallet = p.match(/^\/api\/cards\/(\d+)\/wallet\/google$/);
+    if (req.method === "GET" && mWallet) {
+      if (!needAuth()) return;
+      const c = ownCard(Number(mWallet[1]));
+      if (!c) return json(res, 404, { error: "not found" });
+      if (!googleWalletOn()) return json(res, 400, { error: "Google Wallet is not set up yet." });
+      try { return json(res, 200, { url: googleWalletUrl(c, baseUrl(req)) }); }
+      catch (e) { console.warn("wallet:", e.message); return json(res, 500, { error: "Could not create the wallet pass — check the Google Wallet key." }); }
+    }
+
+    /* ---------- referrals ---------- */
+    if (req.method === "GET" && p === "/api/referrals") {
+      if (!needAuth()) return;
+      const code = refCodeFor(me.id);
+      const signups = db.prepare("SELECT COUNT(*) n FROM users WHERE referred_by=?").get(me.id).n;
+      const paid = db.prepare("SELECT COUNT(*) n FROM users WHERE referred_by=? AND ref_rewarded=1").get(me.id).n;
+      return json(res, 200, { code, link: baseUrl(req) + "/register?ref=" + code, signups, paid, days_per_reward: REFERRAL_REWARD_DAYS, days_earned: paid * REFERRAL_REWARD_DAYS });
+    }
+
+    /* ---------- teams (Business plan) ---------- */
+    if (p === "/api/team" && req.method === "GET") {
+      if (!needAuth()) return;
+      const t = teamOwnedBy(me.id);
+      if (!t) {
+        const member = me.team_id ? db.prepare("SELECT t.name, t.company, u.email owner FROM teams t JOIN users u ON u.id=t.owner_id WHERE t.id=?").get(me.team_id) : null;
+        return json(res, 200, { owner: false, eligible: planOf(me) === "business" && !me.team_id, member });
+      }
+      const members = db.prepare("SELECT id, email, name, created_at FROM users WHERE team_id=? ORDER BY id").all(t.id).map((m) => ({ ...m, invited: false }));
+      const invites = db.prepare("SELECT email, card_id, at FROM team_invites WHERE team_id=?").all(t.id);
+      const cards = db.prepare(`SELECT c.id, c.slug, c.first_name, c.last_name, c.job_title, c.active, c.scan_count, c.vcard_downloads, c.user_id,
+          (SELECT COUNT(*) FROM leads l WHERE l.card_id=c.id) leads, u.email FROM cards c LEFT JOIN users u ON u.id=c.user_id WHERE c.team_id=? ORDER BY c.id`).all(t.id);
+      return json(res, 200, { owner: true, team: t, members, invites, cards, seats: PLANS.business.cards, app_url: baseUrl(req) });
+    }
+    if (p === "/api/team" && req.method === "POST") {
+      if (!needAuth()) return;
+      if (me.team_id) return json(res, 400, { error: "You are a member of another company's team." });
+      if (planOf(me) !== "business") return json(res, 403, { error: "Teams are a Business feature. Upgrade to Business to brand your staff cards.", upgrade: true });
+      const b = await jread(req);
+      const accent = /^#[0-9a-fA-F]{3,8}$/.test(String(b.accent || "")) ? b.accent : null;
+      const template = ["corporate", "executive", "minimalist", "premium", "modern"].includes(b.template) ? b.template : null;
+      const theme = THEMES.includes(b.theme) ? b.theme : null;
+      const logo = /^data:image\/(png|jpe?g|webp);base64,/i.test(String(b.logo || "")) && String(b.logo).length < 1500000 ? b.logo : null;
+      let t = teamOwnedBy(me.id);
+      if (!t) { db.prepare("INSERT INTO teams(owner_id) VALUES (?)").run(me.id); t = teamOwnedBy(me.id); }
+      db.prepare("UPDATE teams SET name=?, company=?, accent=?, template=?, theme=?, logo=COALESCE(?,logo) WHERE id=?")
+        .run(vv(b.name).slice(0, 80), vv(b.company).slice(0, 120), accent, template, theme, logo, t.id);
+      if (b.clear_logo) db.prepare("UPDATE teams SET logo=NULL WHERE id=?").run(t.id);
+      db.prepare("UPDATE cards SET team_id=? WHERE user_id=? AND team_id IS NULL").run(t.id, me.id); /* owner's own cards join the brand */
+      for (const c of db.prepare("SELECT id FROM cards WHERE team_id=?").all(t.id)) applyTeamBrand(c.id);
+      return json(res, 200, { ok: true });
+    }
+    if (p === "/api/team/members" && req.method === "POST") {
+      if (!needAuth()) return;
+      const t = teamOwnedBy(me.id);
+      if (!t) return json(res, 400, { error: "Set up your team brand first." });
+      if (planOf(me) !== "business") return json(res, 403, { error: "Teams need an active Business plan.", upgrade: true });
+      const b = await jread(req);
+      const email = String(b.email || "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(res, 400, { error: "enter the staff member's email" });
+      if (email === me.email) return json(res, 400, { error: "that's you — you're already the team owner" });
+      const used = db.prepare("SELECT COUNT(*) n FROM users WHERE team_id=?").get(t.id).n + db.prepare("SELECT COUNT(*) n FROM team_invites WHERE team_id=?").get(t.id).n + 1;
+      if (used >= PLANS.business.cards) return json(res, 403, { error: `Your Business plan covers ${PLANS.business.cards} people.` });
+      const existing = db.prepare("SELECT * FROM users WHERE email=?").get(email);
+      if (existing && existing.team_id && existing.team_id !== t.id) return json(res, 409, { error: "that person is already in another company's team" });
+      if (existing && teamOwnedBy(existing.id)) return json(res, 409, { error: "that person owns their own team" });
+      if (!existing && db.prepare("SELECT 1 FROM team_invites WHERE email=?").get(email)) return json(res, 409, { error: "already invited" });
+      const first = vv(b.first_name).slice(0, 60) || email.split("@")[0], last = vv(b.last_name).slice(0, 60);
+      const slug = slugify(first, last);
+      const ownerId = existing ? existing.id : me.id;
+      const r = db.prepare("INSERT INTO cards(slug,user_id,team_id,first_name,last_name,job_title,mobile,email,template) VALUES (?,?,?,?,?,?,?,?,?)")
+        .run(slug, ownerId, t.id, first, last, vv(b.job_title).slice(0, 80), vv(b.mobile).slice(0, 40), email, t.template || "corporate");
+      const cardId = Number(r.lastInsertRowid);
+      applyTeamBrand(cardId);
+      if (existing) db.prepare("UPDATE users SET team_id=? WHERE id=?").run(t.id, existing.id);
+      else db.prepare("INSERT INTO team_invites(email,team_id,card_id) VALUES (?,?,?)").run(email, t.id, cardId);
+      const link = baseUrl(req) + (existing ? "/login" : "/register");
+      sendEmail(email, `${t.company || t.name || "Your company"} created a HaloCard for you`,
+        `<p>${esc(me.name || me.email)} added you to <b>${esc(t.company || t.name || "their team")}</b> on HaloCard. Your digital business card is ready:</p>
+         <p><a href="${esc(baseUrl(req))}/c/${esc(slug)}">${esc(baseUrl(req))}/c/${esc(slug)}</a></p>
+         <p>${existing ? "Sign in" : "Create your login with this email"} to add your photo and details: <a href="${esc(link)}">${esc(link)}</a></p>`);
+      return json(res, 200, { ok: true, card_id: cardId, slug, invited: !existing, link });
+    }
+    const mTeamMember = p.match(/^\/api\/team\/members\/(\d+)$/);
+    if (mTeamMember && req.method === "DELETE") {
+      if (!needAuth()) return;
+      const t = teamOwnedBy(me.id); const uid = Number(mTeamMember[1]);
+      if (!t || !db.prepare("SELECT 1 FROM users WHERE id=? AND team_id=?").get(uid, t.id)) return json(res, 404, { error: "not found" });
+      /* staff leaving: their company cards come back to the owner (disabled) so the QR can be reassigned */
+      db.prepare("UPDATE cards SET user_id=?, active=0 WHERE user_id=? AND team_id=?").run(me.id, uid, t.id);
+      db.prepare("UPDATE users SET team_id=NULL WHERE id=?").run(uid);
+      return json(res, 200, { ok: true });
+    }
+    if (p === "/api/team/invites" && req.method === "DELETE") {
+      if (!needAuth()) return;
+      const t = teamOwnedBy(me.id); const email = String(url.searchParams.get("email") || "").toLowerCase();
+      const inv = t && db.prepare("SELECT * FROM team_invites WHERE email=? AND team_id=?").get(email, t.id);
+      if (!inv) return json(res, 404, { error: "not found" });
+      db.prepare("DELETE FROM team_invites WHERE email=?").run(email);
+      if (inv.card_id) db.prepare("UPDATE cards SET active=0 WHERE id=? AND user_id=?").run(inv.card_id, me.id);
+      return json(res, 200, { ok: true });
+    }
+
+    /* ---------- physical NFC card orders ---------- */
+    if (req.method === "GET" && p === "/api/nfc/products") {
+      if (!needAuth()) return;
+      const mine = db.prepare("SELECT * FROM nfc_orders WHERE user_id=? ORDER BY id DESC LIMIT 50").all(me.id);
+      return json(res, 200, { products: NFC_PRODUCTS, delivery: NFC_DELIVERY_GHS, online: !!PAYSTACK_SECRET_KEY, orders: mine });
+    }
+    if (req.method === "POST" && p === "/api/nfc/order") {
+      if (!needAuth()) return;
+      const b = await jread(req);
+      const prod = NFC_PRODUCTS[b.material];
+      if (!prod) return json(res, 400, { error: "choose PVC or Metal" });
+      const qty = Math.max(1, Math.min(50, parseInt(b.qty, 10) || 1));
+      const card = ownCard(Number(b.card_id));
+      if (!card) return json(res, 400, { error: "choose which card to put on the NFC card" });
+      const f = (v, n) => vv(v).slice(0, n);
+      const name_on_card = f(b.name_on_card, 60) || fullName(card), phone = f(b.phone, 40), address = f(b.address, 200), city = f(b.city, 60), region = f(b.region, 60);
+      if (!phone || !address || !city) return json(res, 400, { error: "enter delivery phone, address and city" });
+      const amount = prod.price * qty + NFC_DELIVERY_GHS;
+      const r0 = db.prepare("INSERT INTO nfc_orders(user_id,card_id,material,qty,name_on_card,phone,address,city,region,note,amount) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        .run(me.id, card.id, b.material, qty, name_on_card, phone, address, city, region, f(b.note, 300), amount);
+      const orderId = Number(r0.lastInsertRowid);
+      if (!PAYSTACK_SECRET_KEY) return json(res, 200, { ok: true, order: orderId, manual: true, note: "Order received. We will contact you on WhatsApp to confirm payment and delivery." });
+      try {
+        const r = await fetch("https://api.paystack.co/transaction/initialize", {
+          method: "POST", headers: { Authorization: "Bearer " + PAYSTACK_SECRET_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: me.email, amount: Math.round(amount * 100), currency: "GHS",
+            metadata: { kind: "nfc", order_id: orderId, uid: me.id }, callback_url: baseUrl(req) + "/app" }),
+        });
+        const d = await r.json();
+        if (!d.status || !d.data?.authorization_url) return json(res, 502, { error: d.message || "could not start payment" });
+        return json(res, 200, { ok: true, order: orderId, url: d.data.authorization_url });
+      } catch { return json(res, 502, { error: "payment service unreachable, try again shortly" }); }
+    }
+    if (req.method === "POST" && p === "/api/admin/reports/run") {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      if (!RESEND_API_KEY) return json(res, 400, { error: "Email is not set up yet (RESEND_API_KEY)." });
+      db.prepare("DELETE FROM meta WHERE k=?").run("report_" + new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 1)).toISOString().slice(0, 7));
+      return json(res, 200, { ok: true, sent: await sendMonthlyReports(true) });
+    }
+    if (req.method === "GET" && p === "/api/admin/orders") {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      const orders = db.prepare(`SELECT o.*, u.email, c.slug FROM nfc_orders o LEFT JOIN users u ON u.id=o.user_id
+        LEFT JOIN cards c ON c.id=o.card_id ORDER BY o.id DESC LIMIT 500`).all();
+      return json(res, 200, { orders, app_url: baseUrl(req) });
+    }
+    const mOrder = p.match(/^\/api\/admin\/orders\/(\d+)$/);
+    if (req.method === "PUT" && mOrder) {
+      if (!needAuth()) return;
+      if (!isAdmin) return json(res, 403, { error: "admin only" });
+      const b = await jread(req);
+      if (b.status !== undefined && !ORDER_STATUSES.includes(b.status)) return json(res, 400, { error: "bad status" });
+      if (b.status !== undefined) db.prepare("UPDATE nfc_orders SET status=? WHERE id=?").run(b.status, Number(mOrder[1]));
+      if (b.tracking !== undefined) db.prepare("UPDATE nfc_orders SET tracking=? WHERE id=?").run(vv(b.tracking).slice(0, 200), Number(mOrder[1]));
+      return json(res, 200, { ok: true });
     }
 
     /* admin: user management */
@@ -907,15 +1471,30 @@ const server = http.createServer(async (req, res) => {
         ? db.prepare(`SELECT l.*, c.first_name cf, c.last_name cl, c.slug cslug
             FROM leads l LEFT JOIN cards c ON c.id=l.card_id ORDER BY l.at DESC LIMIT 500`).all()
         : db.prepare(`SELECT l.*, c.first_name cf, c.last_name cl, c.slug cslug
-            FROM leads l JOIN cards c ON c.id=l.card_id WHERE c.user_id=? ORDER BY l.at DESC LIMIT 500`).all(me.id);
+            FROM leads l JOIN cards c ON c.id=l.card_id WHERE (c.user_id=? OR c.team_id IN (SELECT id FROM teams WHERE owner_id=?)) ORDER BY l.at DESC LIMIT 500`).all(me.id, me.id);
       return json(res, 200, { leads });
     }
+    if (req.method === "POST" && p === "/api/leads/seen") {
+      if (!needAuth()) return;
+      if (isAdmin) db.prepare("UPDATE leads SET seen=1").run();
+      else db.prepare("UPDATE leads SET seen=1 WHERE card_id IN (SELECT id FROM cards c WHERE (c.user_id=? OR c.team_id IN (SELECT id FROM teams WHERE owner_id=?)))").run(me.id, me.id);
+      return json(res, 200, { ok: true });
+    }
     const mLead = p.match(/^\/api\/leads\/(\d+)$/);
+    if (req.method === "PUT" && mLead) {
+      if (!needAuth()) return;
+      const lid = Number(mLead[1]);
+      if (!isAdmin && !db.prepare("SELECT l.id FROM leads l JOIN cards c ON c.id=l.card_id WHERE l.id=? AND (c.user_id=? OR c.team_id IN (SELECT id FROM teams WHERE owner_id=?))").get(lid, me.id, me.id)) return json(res, 404, { error: "not found" });
+      const b = await jread(req);
+      if (b.status !== undefined) { if (!LEAD_STATUSES.includes(b.status)) return json(res, 400, { error: "bad status" }); db.prepare("UPDATE leads SET status=? WHERE id=?").run(b.status, lid); }
+      if (b.notes !== undefined) db.prepare("UPDATE leads SET notes=? WHERE id=?").run(vv(b.notes).slice(0, 1000), lid);
+      return json(res, 200, { ok: true });
+    }
     if (req.method === "DELETE" && mLead) {
       if (!needAuth()) return;
       const lid = Number(mLead[1]);
       if (!isAdmin) {
-        const owns = db.prepare("SELECT l.id FROM leads l JOIN cards c ON c.id=l.card_id WHERE l.id=? AND c.user_id=?").get(lid, me.id);
+        const owns = db.prepare("SELECT l.id FROM leads l JOIN cards c ON c.id=l.card_id WHERE l.id=? AND (c.user_id=? OR c.team_id IN (SELECT id FROM teams WHERE owner_id=?))").get(lid, me.id, me.id);
         if (!owns) return json(res, 404, { error: "not found" });
       }
       db.prepare("DELETE FROM leads WHERE id=?").run(lid);
@@ -945,6 +1524,7 @@ const server = http.createServer(async (req, res) => {
     const mToggle = p.match(/^\/api\/cards\/(\d+)\/toggle$/);
     if (req.method === "POST" && mToggle) {
       if (!needAuth()) return;
+      if (!ownCard(Number(mToggle[1]))) return json(res, 404, { error: "not found" });
       db.prepare("UPDATE cards SET active = 1 - active, updated_at=datetime('now') WHERE id=?").run(Number(mToggle[1]));
       const c = ownCard(Number(mToggle[1]));
       return json(res, 200, { ok: true, active: !!c?.active });

@@ -44,14 +44,16 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.cla
 if(localStorage.getItem('hc_token')) location.href='/app';
 function showReg(){document.getElementById('loginBox').classList.add('hidden');document.getElementById('regBox').classList.remove('hidden');}
 function showLogin(){document.getElementById('regBox').classList.add('hidden');document.getElementById('loginBox').classList.remove('hidden');}
-if(location.pathname==='/register')showReg();
+/* referral code from ?ref=… (kept for the session, also when they arrive via the home page) */
+let REF='';try{REF=new URLSearchParams(location.search).get('ref')||sessionStorage.getItem('hc_ref')||'';if(REF)sessionStorage.setItem('hc_ref',REF);}catch(_){}
+if(location.pathname==='/register'||REF)showReg();
 async function login(){
   try{const r=await api('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:pw.value})});
     localStorage.setItem('hc_token',r.token);location.href='/app';}catch(e){toast(e.message);}
 }
 async function register(){
   try{const r=await api('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name:document.getElementById('r_name').value,email:document.getElementById('r_email').value,password:document.getElementById('r_pw').value})});
+    body:JSON.stringify({name:document.getElementById('r_name').value,email:document.getElementById('r_email').value,password:document.getElementById('r_pw').value,ref:REF})});
     localStorage.setItem('hc_token',r.token);location.href='/app';}catch(e){toast(e.message);}
 }
 document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
